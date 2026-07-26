@@ -1,0 +1,11 @@
+# Claudemux manual-mode patterns.
+# Copy this file to  ~/.claude/claudemux/manual-patterns  and uncomment/add globs.
+# Any session whose cwd matches a glob below registers in MANUAL mode: peers can see it in
+# `/cm peers`, but the relay will NEVER type /cm recv into it (no other session can drive a turn
+# there). Use it for sensitive workspaces. One shell glob per line; # starts a comment.
+#
+# Examples:
+# *emr*
+# *legal*
+# *secret*
+# */clients/*

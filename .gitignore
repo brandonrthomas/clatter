@@ -1,0 +1,15 @@
+# Local-only notes (machine-specific / private details) — kept out of the repo on purpose
+INTERNAL_NOTES.md
+
+# Runtime artifacts (only appear if you run/develop in-tree)
+relay.log
+registry/
+mailbox/
+
+# settings.json backups written by install/uninstall
+*.bak-*
+
+# editor / OS cruft
+*.swp
+*~
+.DS_Store

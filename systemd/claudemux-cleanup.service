@@ -1,0 +1,6 @@
+[Unit]
+Description=Claudemux registry cleanup (prune dead-pid entries)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claude/claudemux/scripts/bus-cleanup.sh

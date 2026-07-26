@@ -1,0 +1,12 @@
+[Unit]
+Description=Claudemux relay (wakes Claude Code panes on new messages via tmux)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.claude/claudemux/relay/claudemux-relay.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

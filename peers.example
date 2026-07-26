@@ -1,0 +1,9 @@
+# Claudemux peer hosts for cross-machine discovery.
+# Copy this file to  ~/.claude/claudemux/peers  and list one SSH host/alias per line (the same name
+# you'd pass to `ssh <host>`; # starts a comment). Then:
+#   - `/cm peers` aggregates those hosts' live sessions (shown as name@host)
+#   - a bare-name `/cm ask <name> ...` locates the peer across these hosts automatically
+# Requires Claudemux installed on each peer and working key-based (non-interactive) SSH.
+#
+# box
+# laptop
