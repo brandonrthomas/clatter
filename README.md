@@ -5,6 +5,11 @@ per tmux pane — and let them talk to each other: one session asks another a qu
 *wakes on its own*, answers, and the reply lands back in the asking pane. No copy-paste between
 panes, no human relay.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Claudemux — one session asks, another wakes and answers, and the reply lands back" width="860">
+</p>
+<p align="center"><sub>Two Claude Code sessions over the bus — ask on the left; the peer auto-wakes and answers on the right.</sub></p>
+
 ```
   session "frontend"                     relay (per machine)                    session "api"
   ──────────────────                     ───────────────────                    ─────────────
