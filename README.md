@@ -8,8 +8,8 @@ panes, no human relay.
 ```
   session "frontend"                     relay (per machine)                    session "api"
   ──────────────────                     ───────────────────                    ─────────────
-  /cm ask api "which port is the
-       auth service on?"  ───────────▶  new message for "api"
+  /cm ask api which port is the
+       auth service on?  ────────────▶  new message for "api"
                                               │  resolve api → its tmux pane
                                               └─ wake it ──────────────────────▶ (idle or busy)
                                                                                       │
@@ -50,8 +50,10 @@ peer that actually **owns** the answer, in real time, without you in the middle.
 1. **Sessions are interactive `claude` CLIs, one per tmux pane.** The only way to hand a running
    interactive session a new turn is `tmux send-keys` into its pane — which delivers instantly if
    it's idle and *queues* if it's mid-turn.
-2. **Sessions are addressed by tty, resolved live.** Pane ids drift (tmux resurrect/renumber), so a
-   session registers its **pid**; the relay resolves pid → tty → current pane at wake time.
+2. **The target pane is resolved live, never stored.** Pane ids drift (tmux resurrect/renumber), so
+   nothing caches a pane id: each session is keyed by a stable **sessionId** (which also names its
+   mailbox, so a rename never misroutes), and at wake time the relay looks up that session's **pid**
+   and resolves pid → tty → current pane.
 3. **Nothing runs between turns**, so the push comes from outside: a per-machine **relay daemon**
    watches the mailboxes (`inotifywait`) and wakes the target pane when a message arrives.
 
@@ -88,7 +90,7 @@ first, preserving everything else), and enables the relay + cleanup timer. Open 
 From inside any session:
 
 ```
-/cm peers                       # who's on the bus (name, machine, alive, description)
+/cm peers                       # who's on the bus (name, machine, alive, mode)
 /cm ask <name> <question>       # ask a peer; the answer returns to THIS pane, asynchronously
 /cm send <name> <message>       # fire-and-forget notify
 /cm broadcast <message>         # notify every live session
@@ -99,8 +101,15 @@ From inside any session:
 `/cm ask` doesn't block — you keep working; when the peer answers, the relay wakes your pane and
 the reply appears inline.
 
+**Composing vs. verbatim.** For `ask` / `send` / `broadcast`, the text after the command is normally
+an *instruction for what to communicate*: the session composes the actual message from its current
+context and sends that — e.g. `/cm ask box tell them the port I just set` sends something like
+`The auth port is 8081.` (A self-contained question is just sent as-is.) To send text **exactly** as
+written — a command, a snippet, precise wording — prefix it with `*`: `/cm send api *rm -rf /tmp/cache`
+stores that literal string as a message (it is never executed).
+
 **Cross-machine.** List your other hosts in `~/.claude/claudemux/peers` (one SSH alias per line).
-Then `/cm peers` aggregates their live sessions (shown as `name@host`), and `/cm ask <name> "…"`
+Then `/cm peers` aggregates their live sessions (shown as `name@host`), and `/cm ask <name> <question>`
 auto-locates a peer across those hosts — or address one explicitly as `name@host`. The message is
 dropped over SSH into that host's mailbox and its relay wakes the pane; replies route back
 automatically. Works even when the hosts have different home directories. Requires Claudemux on each
