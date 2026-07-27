@@ -73,17 +73,22 @@ relay-was-down gap). Then it watches `mailbox/` with `inotifywait` — or, if in
 installed, **polls every second** (`CLAUDEMUX_POLL`) with a per-file seen-set for the same new-file
 semantics. For each new `<id>.json` under `mailbox/<target>/` it rejects unsafe target names, reads
 `registry/<target>.json`, and — if the target is `auto` and its pid is alive — resolves
-pid → tty → pane and types the wake. Dead targets are pruned on contact. Logs to `relay/relay.log`.
+pid → tty → pane and types the wake. An `auto` target that no longer resolves to a pane (e.g. tmux
+was killed mid-session) is left queued with a loud `WARN` rather than silently dropped. Dead targets
+are pruned on contact. Logs to `relay/relay.log`.
 
 ### Hooks
-- **SessionStart** → `bus-hook-register.sh`: registers the session (auto-named), classifies mode
-  from `manual-patterns`, and emits a one-line `additionalContext` note telling the session its bus
-  name + current live peers. Fires on fresh start **and on `claude -c` resume**.
+- **SessionStart** → `bus-hook-register.sh`: registers the session (name resolved live, not stored),
+  classifies mode — `manual` if the cwd matches a `manual-patterns` glob **or** the session isn't in
+  a tmux pane (nothing to wake), else `auto` — and emits a one-line `additionalContext` note telling
+  the session its bus name + current live peers. Fires on fresh start **and on `claude -c` resume**.
 - **SessionEnd** → `bus-hook-deregister.sh`: removes the manifest.
 
 ### Slash command — `/cm`
 `~/.claude/commands/cm.md` drives `bus.sh` **through the agent** (not a raw `!` shell expansion),
-passing any free-text payload as a single quoted argument so the shell never interprets it.
+passing any free-text payload as a single quoted argument so the shell never interprets it. Running
+through the agent (rather than raw shell) is also what lets `ask`/`send`/`broadcast` **compose** the
+message from the session's current context by default; a leading `*` sends the rest **verbatim**.
 Subcommands: `peers`, `ask`, `send`, `broadcast`, `status`, and `recv`. `recv` is what the relay's
 wake types (it carries no free text).
 
@@ -122,9 +127,12 @@ the recipient's name never appears in the keystroke. Consequences:
 
 ## Liveness & pruning
 
-A session is live iff its pid is running *and* resolves to a tmux pane. Pruning is belt-and-braces:
-the relay deletes an entry the moment it tries to wake a dead target, and a systemd timer
-(`claudemux-cleanup.timer`, every 5 min) sweeps the rest with `bus-cleanup.sh`.
+A session is live iff its **pid** is running — that is the sole pruning criterion. Wakeability
+(resolving to a tmux pane) is a *separate* property: an alive session with no pane is a valid
+`manual`/poll participant, not a dead one, and is never pruned for lacking a pane. Pruning is
+belt-and-braces: the relay deletes an entry the moment it tries to wake an `auto` target whose pid is
+dead, and a systemd timer (`claudemux-cleanup.timer`, every 5 min) sweeps the rest with
+`bus-cleanup.sh` — also pid-only.
 
 ## Naming & addressing
 
