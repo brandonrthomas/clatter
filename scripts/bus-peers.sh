@@ -32,13 +32,14 @@ pf="$BUS_ROOT/peers"
 [ -f "$pf" ] || exit 0
 while IFS= read -r m; do
   m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
-  ssh -o ConnectTimeout=3 -o BatchMode=yes "$m" \
-      'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-peers.sh" --json' 2>/dev/null \
-  | while IFS= read -r j; do
-      [ -z "$j" ] && continue
-      name=$(printf '%s' "$j" | jq -r '.name');  mode=$(printf '%s' "$j" | jq -r '.mode')
-      desc=$(printf '%s' "$j" | jq -r '.description')
-      al=$(printf '%s' "$j" | jq -r 'if .alive then "yes" else "DEAD" end')
-      row "${name}@${m}" "$m" "$al" "[$mode] $desc"
-    done
+  # capture with `|| true` so a slow/unreachable peer never aborts the listing (set -e + pipefail)
+  jlines="$($BUS_SSH "$m" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-peers.sh" --json' </dev/null 2>/dev/null || true)"
+  [ -z "$jlines" ] && continue
+  while IFS= read -r j; do
+    [ -z "$j" ] && continue
+    name=$(printf '%s' "$j" | jq -r '.name');  mode=$(printf '%s' "$j" | jq -r '.mode')
+    desc=$(printf '%s' "$j" | jq -r '.description')
+    al=$(printf '%s' "$j" | jq -r 'if .alive then "yes" else "DEAD" end')
+    row "${name}@${m}" "$m" "$al" "[$mode] $desc"
+  done <<< "$jlines"
 done < "$pf"

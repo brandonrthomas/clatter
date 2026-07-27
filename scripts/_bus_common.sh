@@ -5,6 +5,9 @@ BUS_ROOT="${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}"
 BUS_REG="$BUS_ROOT/registry"
 BUS_MBX="$BUS_ROOT/mailbox"
 BUS_SELF_MACHINE="${CLAUDEMUX_MACHINE:-$(hostname -s)}"
+# ssh invocation for cross-machine ops (peer discovery + remote drops). The timeout must tolerate a
+# cold Tailscale connect (a few seconds); CLAUDEMUX_SSH_TIMEOUT overrides. Never prompts (BatchMode).
+BUS_SSH="ssh -o BatchMode=yes -o ConnectTimeout=${CLAUDEMUX_SSH_TIMEOUT:-8}"
 
 # Walk up the process tree from $1 (default $$) to the nearest `claude` process; echo its pid.
 # Claude Code is a node app, so match on args (starts with claude / */claude), not comm (=node).

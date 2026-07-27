@@ -68,8 +68,8 @@ elif [ "$type" != "broadcast" ] && [ -f "$BUS_ROOT/peers" ]; then
   # Not a local session: look for it on a peer host (first match wins; use name@machine to force one).
   while IFS= read -r m; do
     m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
-    if ssh -o ConnectTimeout=3 -o BatchMode=yes "$m" \
-         "test -f \"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}/registry/$target.json\"" 2>/dev/null; then
+    if $BUS_SSH "$m" \
+         "test -f \"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}/registry/$target.json\"" </dev/null 2>/dev/null; then
       tmachine="$m"; break
     fi
   done < "$BUS_ROOT/peers"
@@ -100,7 +100,7 @@ else
   # Remote peer: atomic tmp+rename drop over ssh. The mailbox path is computed on the REMOTE side
   # from its own $CLAUDEMUX_ROOT/$HOME, so machines with different home dirs work. target/id are
   # charset-validated above, so they are safe to interpolate into the remote command.
-  build_msg | ssh "$tmachine" \
+  build_msg | $BUS_SSH "$tmachine" \
     "R=\"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}\"; d=\"\$R/mailbox/$target\"; \
      mkdir -p \"\$d/archive\" && cat > \"\$d/.$id.tmp\" && mv \"\$d/.$id.tmp\" \"\$d/$id.json\""
   echo "sent $type -> $target@$tmachine (id $id)"
