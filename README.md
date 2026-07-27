@@ -59,7 +59,8 @@ Full design in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Requirements
 
-- Linux with **tmux** (each session must run in a tmux pane).
+- Linux with **tmux** for auto-wake — a session that should be woken automatically must run in a
+  tmux pane. A session outside tmux still works, in manual (poll) mode (see **Manual mode** below).
 - **`jq`** and **systemd** with user services + lingering. **`inotify-tools`** (`inotifywait`) is
   recommended but optional — without it the relay falls back to polling.
 - **Claude Code** (the `claude` CLI) with hooks and custom slash commands.
@@ -114,9 +115,19 @@ host and key-based SSH between them.
 | Read-only workspaces | add globs to `~/.claude/claudemux/manual-patterns` (see `manual-patterns.example`) |
 | Cross-machine peers | list SSH hosts in `~/.claude/claudemux/peers` (see `peers.example`) |
 
-**Manual mode.** Any session whose cwd matches a glob in `manual-patterns` registers as `manual`:
-peers can *see* it in `/cm peers`, but the relay will **never** type into it. Use it for sensitive
-workspaces you don't want a peer able to drive.
+**Manual mode.** A registered, fully addressable session that the relay will **never** type into —
+peers see it in `/cm peers`, messages reach its mailbox, and you drain them yourself with `/cm recv`.
+A session registers manual for either reason:
+
+- its cwd matches a glob in `manual-patterns` — sensitive workspaces you don't want a peer able to
+  drive; or
+- it isn't running in a tmux pane, so there's no pane to `send-keys` into. Rather than register
+  `auto` and then silently fail to wake, it degrades to manual — still on the bus and reachable, just
+  polled instead of pushed.
+
+A session's tmux-ness is fixed when it launches, so this is decided once at registration. If an
+`auto` session later *loses* its pane (e.g. tmux is killed mid-session), the relay can't wake it — it
+leaves the message queued and logs a loud `WARN` rather than dropping it silently.
 
 ## Security
 

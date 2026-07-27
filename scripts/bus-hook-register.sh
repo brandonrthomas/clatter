@@ -19,6 +19,19 @@ if [ -f "$pat_file" ]; then
   done < "$pat_file"
 fi
 
+# Auto is only meaningful if the relay can actually wake us — i.e. we're in a tmux pane. A session
+# that isn't (a plain terminal) falls back to manual: still addressable and drainable via /cm recv,
+# but the relay won't try (and silently fail) to type into a pane that doesn't exist. A session's
+# tmux-ness is fixed at launch, so decide it once, here.
+if [ "$mode" = "auto" ]; then
+  _pid="$(bus_find_claude_pid "$$" || true)"; _pane=""
+  if [ -n "$_pid" ]; then
+    _tty="$(bus_pid_to_tty "$_pid" || true)"
+    [ -n "$_tty" ] && _pane="$(bus_tty_to_pane "$_tty" || true)"
+  fi
+  [ -n "$_pane" ] || mode="manual"
+fi
+
 if [ -n "$sid" ]; then
   "$DIR/bus-register.sh" --sessionid "$sid" --cwd "$cwd" --mode "$mode" >/dev/null 2>&1 || true
 else

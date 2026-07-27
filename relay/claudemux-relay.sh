@@ -18,10 +18,13 @@ wake() {
   mode=$(jq -r '.mode' "$reg"); pid=$(jq -r '.pid' "$reg")
   [ "$mode" = "auto" ] || { log "'$target' mode=$mode; not waking"; return; }
   bus_alive "$pid" || { log "'$target' pid $pid dead; pruning entry"; rm -f "$reg"; return; }
+  # Reaching here means mode=auto, so the session was classified wakeable at registration. If we now
+  # can't find a pane, that's an anomaly (tmux died mid-session) — the message stays queued and we say
+  # so loudly, rather than silently dropping the wake.
   tty=$(bus_pid_to_tty "$pid" || true)
-  [ -n "$tty" ] || { log "'$target' pid $pid has no tty; skip"; return; }
+  [ -n "$tty" ] || { log "WARN '$target' is mode=auto but pid $pid has no tty — cannot wake; message queued"; return; }
   pane=$(bus_tty_to_pane "$tty")
-  [ -n "$pane" ] || { log "'$target' tty $tty -> no tmux pane; skip"; return; }
+  [ -n "$pane" ] || { log "WARN '$target' is mode=auto but tty $tty maps to no tmux pane — cannot wake; message queued (tmux gone?)"; return; }
   # HARD INVARIANT: the ONLY thing ever typed into a pane is this fixed constant — never a
   # name, path, or any sender-influenced data. /cm recv self-resolves which session it is,
   # then reads the mailbox itself. This keeps the send-keys injection surface a single literal.
