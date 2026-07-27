@@ -10,6 +10,8 @@ panes, no human relay.
 </p>
 <p align="center"><sub>Two Claude Code sessions over the bus — ask on the left; the peer auto-wakes and answers on the right.</sub></p>
 
+<br>
+
 ```
   session "frontend"                     relay (per machine)                    session "api"
   ──────────────────                     ───────────────────                    ─────────────
