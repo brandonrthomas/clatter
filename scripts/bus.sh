@@ -29,10 +29,12 @@ case "$cmd" in
     "$DIR/bus-send.sh" _ broadcast "$(subj_of "$m")" "$m"
     ;;
   status)
-    self="$(bus_resolve_self_name || true)"; [ -z "$self" ] && self="(unregistered)"
-    echo "this session is registered as: $self"
-    if [ "$self" != "(unregistered)" ]; then
-      pend=$(find "$BUS_MBX/$self" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
+    sid="$(bus_self_sid || true)"
+    if [ -z "$sid" ]; then
+      echo "this session is not registered on the bus"
+    else
+      echo "this session: \"$(bus_self_name)\"  (session $sid)"
+      pend=$(find "$BUS_MBX/$sid" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
       echo "pending inbox: $pend message(s)  (run /cm recv to read)"
     fi
     echo; "$DIR/bus-peers.sh"

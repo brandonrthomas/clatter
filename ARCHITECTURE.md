@@ -29,35 +29,39 @@ visited the asking pane. Real-time requires something that can wake an idle sess
 ```
 ~/.claude/claudemux/
 ├── scripts/
-│   ├── _bus_common.sh        # shared paths + pid→tty→pane + self-resolve helpers
-│   ├── bus-register.sh       # register/refresh this session (auto-named)
+│   ├── _bus_common.sh        # shared paths + pid→tty→pane + sessionId/live-name resolvers
+│   ├── bus-register.sh       # register/refresh this session (keyed by sessionId)
 │   ├── bus-send.sh           # drop a message (local, or over SSH to a peer machine)
 │   ├── bus-recv.sh           # drain inbox, render as untrusted data  (backs /cm recv)
-│   ├── bus-peers.sh          # list the registry
+│   ├── bus-resolve.sh        # resolve a live name -> local sessionId (used locally + over SSH)
+│   ├── bus-peers.sh          # list the registry with live names
 │   ├── bus-cleanup.sh        # prune dead-pid entries
 │   ├── bus-deregister.sh     # remove one entry
 │   ├── bus.sh                # /cm dispatcher (peers|ask|send|broadcast|recv|status)
 │   ├── bus-hook-register.sh  # SessionStart hook
 │   └── bus-hook-deregister.sh# SessionEnd hook
 ├── relay/claudemux-relay.sh  # the daemon (systemd --user)
-├── registry/<name>.json      # live sessions (pid-anchored; no pane id stored)
-├── mailbox/<name>/           # <epoch_ms>-<rand>.json messages + archive/
-└── manual-patterns           # cwd globs that register manual (relay never types into them)
+├── registry/<sessionId>.json # live sessions (pid-anchored; no name/pane id stored)
+├── mailbox/<sessionId>/      # <epoch_ms>-<rand>.json messages + archive/
+├── manual-patterns           # cwd globs that register manual (relay never types into them)
+└── peers                     # SSH host aliases for cross-machine discovery
 ```
 
 The message-bus terminology (`bus-*.sh`, "on the bus") is the accurate description of the mechanism:
 Claudemux is a message bus; the `bus-*` scripts are its implementation.
 
-### Registry — `registry/<name>.json`
-One file per live session, written by the SessionStart hook:
+### Registry — `registry/<sessionId>.json`
+One file per live session, written by the SessionStart hook, keyed by the Claude **sessionId** (a
+UUID, stable across `/rename` and `claude -c`) so a rename never re-keys anything:
 ```json
-{ "name":"api", "machine":"host", "pid":962981, "tty":"/dev/pts/9",
-  "cwd":"/home/user/api", "started":"…", "description":"", "mode":"auto" }
+{ "sessionId":"a1b2c3d4-…", "pid":962981, "machine":"host",
+  "cwd":"/home/user/api", "mode":"auto", "started":"…" }
 ```
-`pid` is the liveness anchor and what the relay resolves to a pane. **No pane id is stored.** `mode`
-is `auto` (relay may wake it) or `manual` (relay never types into it).
+`pid` is the liveness anchor and what the relay resolves to a pane. **No name and no pane id are
+stored** — the name is resolved live (see Naming). `mode` is `auto` (relay may wake it) or `manual`
+(relay never types into it).
 
-### Mailbox — `mailbox/<name>/`
+### Mailbox — `mailbox/<sessionId>/`
 Per-session inbox. Messages are JSON files named `<epoch_ms>-<rand>.json` (the message `id`).
 Processed files move to `archive/`. Writes are atomic (tmp file + `rename()`), so no partial reads.
 FIFO by filename, which sorts by the millisecond prefix.
@@ -105,13 +109,16 @@ the recipient's name never appears in the keystroke. Consequences:
 ## Message format
 
 ```json
-{ "id":"1785037760123-515c", "from":"frontend", "to":"api", "machine":"host",
-  "type":"query", "subject":"auth port", "body":"which port is auth on?",
+{ "id":"1785037760123-515c", "from":"frontend", "from_session":"…uuid…", "to_session":"…uuid…",
+  "machine":"host", "type":"query", "subject":"auth port", "body":"which port is auth on?",
   "reply_to":null, "timestamp":"…" }
 ```
-- **query** expects a response (the reply wakes the asker). **response** carries `reply_to` (the
-  query's id). **notify** is fire-and-forget. **broadcast** expands at send time into one notify per
-  live session. Keep bodies small; send a file path, not a payload, for anything large.
+- Delivery is keyed by `to_session` (the recipient's sessionId). `from` is the sender's live display
+  name; `from_session` is its sessionId — so a reply targets the stable `from_session@machine` and
+  still lands even if the sender is renamed mid-exchange.
+- **query** expects a response (the reply wakes the asker). **response** carries `reply_to`.
+  **notify** is fire-and-forget. **broadcast** expands at send time into one notify per live local
+  session. Keep bodies small; send a file path, not a payload, for anything large.
 
 ## Liveness & pruning
 
@@ -121,25 +128,35 @@ the relay deletes an entry the moment it tries to wake a dead target, and a syst
 
 ## Naming & addressing
 
-Auto-name = basename of the session's cwd, sanitized. Two sessions in the same directory get `name`,
-`name-2`, … A session re-registering under the same pid (resume/clear) keeps its name; a dead
-holder's name is reclaimed. Scripts resolve *your own* name from your pid, so nothing is hardcoded.
-Use `/cm peers` to see the real names before addressing.
+The addressable **name is resolved live**, never stored, in this order:
+1. the latest `custom-title` record in the session's transcript
+   (`~/.claude/projects/*/<sessionId>.jsonl`) — this captures both a local `/rename` **and a web-UI
+   rename** (the sync daemon writes the cloud rename into the transcript, even though it does *not*
+   update the session file's `.name`);
+2. Claude's session-file `.name` (`~/.claude/sessions/<pid>.json`) — the derived/auto name;
+3. the cwd basename.
+
+So `/cm peers`, `/cm status`, and `/cm ask <name>` always reflect the *current* name — rename a
+session anywhere and the bus follows, with no re-keying (the key is the sessionId). Names may
+contain spaces and never touch a filesystem path or an SSH command line (those use the UUID), so
+there are no charset restrictions on them. Address a peer by its current name, or by a sessionId
+directly (what replies use); append `@machine` to force a host. Same-name collisions resolve to the
+first match — use `name@machine` or the sessionId to disambiguate.
 
 ## Cross-machine
 
 Address a peer explicitly as `name@machine` (an SSH host/alias). `bus-send.sh` drops the message
 into that host's mailbox over SSH, computing the mailbox path from the **remote** host's
 `$CLAUDEMUX_ROOT`/`$HOME` — so hosts with different home directories work. The peer's own relay wakes
-the pane, and `bus-recv.sh` renders a `reply to: <from>@<sender-machine>` target so replies route
-back. Without an explicit `@machine`, `bus-send.sh` falls back to the local registry's `machine`
-field, then to this host. This reuses your existing SSH keys; verified host↔host in both directions.
+the pane, and `bus-recv.sh` renders a `reply to: <from_session>@<machine>` target (a sessionId, so
+replies survive a rename). This reuses your existing SSH keys; verified host↔host in both directions.
 
 Discovery is on-demand over SSH (no daemon, no sync): list peer hosts in `$CLAUDEMUX_ROOT/peers`
-(SSH aliases, one per line). `bus-peers.sh` aggregates each peer's `--json` registry into `/cm peers`
-(rows shown as `name@host`), and on a bare-name send that misses the local registry, `bus-send.sh`
-probes each peer for `registry/<name>.json` and routes to the first match (use `name@host` to
-disambiguate). `broadcast` is local-machine only.
+(SSH aliases, one per line). `bus-peers.sh` aggregates each peer's `--json` output into `/cm peers`
+(rows shown as `name@host`, each peer resolving its own live names). Addressing a bare name that
+isn't local runs `bus-resolve.sh` on each peer (the name piped in over stdin — never interpolated
+into the remote command) to map it to that host's sessionId, routing to the first match; use
+`name@host` or a sessionId to disambiguate. `broadcast` is local-machine only.
 
 ## Why `send-keys`, not a headless run
 

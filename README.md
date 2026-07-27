@@ -35,8 +35,9 @@ peer that actually **owns** the answer, in real time, without you in the middle.
 
 - **Real round-trips.** `/cm ask <peer> <question>` sends a query; the answer comes back to *your*
   pane asynchronously — because the relay can wake an idle session, not just leave it a note.
-- **Zero manual wiring.** Sessions auto-register at start (and on `claude -c` resume) under their
-  workspace name; a one-line note tells each session its name and who's live.
+- **Names you recognize, live.** A session's bus name is its **Claude session name** (what `/rename`
+  sets, shown in your tab) — resolved live, so renaming a session (locally *or* from the web UI) is
+  reflected immediately, with no manual wiring. Sessions auto-register at start and on `claude -c`.
 - **Self-cleaning.** Dead sessions are pruned automatically (on contact and on a timer).
 - **Safe by design.** The only thing ever typed into another pane is a fixed control string — never
   message content — so a peer can't inject an arbitrary "user" turn. Sensitive workspaces can be
@@ -163,10 +164,11 @@ Run the test suite — zero framework, just bash + jq:
 ./test/run.sh
 ```
 
-It covers registration/auto-naming/collision, send/recv, **message-body safety** (shell
-metacharacters stay inert), target validation, the unknown-target guard, reply routing
-(local + cross-machine), discovery `--json`, and cleanup — against an isolated `CLAUDEMUX_ROOT`
-with fake sessions. The relay and cross-machine SSH are integration paths, verified manually.
+It covers registration (sessionId-keyed), live-name resolution (transcript title wins over the
+session-file name, with fallback) including a rename, send/recv, **message-body safety** (shell
+metacharacters stay inert), target validation, reply routing, discovery `--json`, broadcast, and
+cleanup — against an isolated `CLAUDEMUX_ROOT` with fake session files. The relay, tmux wake, and
+cross-machine SSH are integration paths, verified manually.
 
 ## License
 

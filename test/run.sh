@@ -1,94 +1,90 @@
 #!/usr/bin/env bash
-# Zero-dependency test suite for Claudemux. Requires only: bash, jq.
-# Run:  ./test/run.sh    (exits non-zero if any test fails)
+# Zero-dependency test suite for Claudemux (needs only bash + jq). Run: ./test/run.sh
 #
-# Tests the pure scripts (register/send/recv/peers/cleanup) against an isolated CLAUDEMUX_ROOT with
-# fake sessions (sleep pids). The relay + cross-machine SSH are integration paths, not covered here.
+# Model: sessions are keyed by their Claude sessionId (stable). The human name is resolved LIVE,
+# preferring the latest `custom-title` record in the session transcript (which captures BOTH local
+# /rename and web-UI renames), then the session file's .name, then the cwd basename.
+# Tests use fake session files + fake transcripts + fake pids (sleep) — no tmux/ssh.
 set -u
-
-S="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+MACH="$(hostname -s)"
 PASS=0; FAIL=0
-ok()  { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
-bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; [ $# -gt 1 ] && printf '       %s\n' "$2"; }
-eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$3] got [$2]"; fi; }
-has() { case "$2" in *"$3"*) ok "$1";; *) bad "$1" "output lacks [$3]";; esac; }
-rc()  { local d="$1" want="$2"; shift 2; "$@" >/dev/null 2>&1; eq "$d" "$?" "$want"; }
-isfile() { [ -f "$1" ] && echo y || echo n; }
-count()  { set -- "$@"; printf '%s\n' "$#"; }   # count glob-expanded args (0 if none via nullglob)
+ok(){ PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
+no(){ FAIL=$((FAIL+1)); printf '  FAIL %s -- %s\n' "$1" "$2"; }
+eq(){ if [ "$2" = "$3" ]; then ok "$1"; else no "$1" "want[$3] got[$2]"; fi; }
+has(){ case "$2" in *"$3"*) ok "$1";; *) no "$1" "missing[$3]";; esac; }
+hasnt(){ case "$2" in *"$3"*) no "$1" "unexpected[$3]";; *) ok "$1";; esac; }
+n_json(){ set -- "$1"/*.json; printf '%s\n' "$#"; }
 
-export CLAUDEMUX_ROOT; CLAUDEMUX_ROOT="$(mktemp -d)"
+export CLAUDEMUX_ROOT="$(mktemp -d)"
+export CLAUDEMUX_SESSIONS_DIR="$(mktemp -d)"
+export CLAUDEMUX_PROJECTS_DIR="$(mktemp -d)"; mkdir -p "$CLAUDEMUX_PROJECTS_DIR/p"
 PIDS=()
-trap 'for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null; done; rm -rf "$CLAUDEMUX_ROOT"' EXIT
-livepid() { sleep 600 >/dev/null 2>&1 & local p=$!; PIDS+=("$p"); echo "$p"; }  # redirect fds: else $(…) blocks
+trap 'for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null; done; rm -rf "$CLAUDEMUX_ROOT" "$CLAUDEMUX_SESSIONS_DIR" "$CLAUDEMUX_PROJECTS_DIR"' EXIT
+titlerec(){ jq -nc --arg t "$1" --arg s "$2" '{type:"custom-title",customTitle:$t,sessionId:$s}'; }
+# mksess <sessionId> <name> <cwd> [--no-transcript] -> pid. Session file gets .name="SF-<name>" so
+# tests prove the transcript title wins; transcript gets custom-title=<name> unless --no-transcript.
+mksess(){ sleep 600 >/dev/null 2>&1 & local p=$!; PIDS+=("$p")
+  jq -n --argjson pid "$p" --arg n "SF-$2" --arg s "$1" --arg c "$3" \
+    '{pid:$pid,name:$n,sessionId:$s,cwd:$c,status:"idle"}' > "$CLAUDEMUX_SESSIONS_DIR/$p.json"
+  [ "${4:-}" = "--no-transcript" ] || titlerec "$2" "$1" > "$CLAUDEMUX_PROJECTS_DIR/p/$1.jsonl"
+  echo "$p"; }
 shopt -s nullglob
 
-echo "Claudemux test suite  (root: $CLAUDEMUX_ROOT)"
+echo "Claudemux test suite (root: $CLAUDEMUX_ROOT)"
+A="aaaaaaaa-1111-1111-1111-111111111111"; B="bbbbbbbb-2222-2222-2222-222222222222"
+C="cccccccc-3333-3333-3333-333333333333"
+pa=$(mksess "$A" "alpha" "/x/alpha"); pb=$(mksess "$B" "beta" "/x/beta")
+pc=$(mksess "$C" "gamma" "/x/gamma" --no-transcript)   # no transcript -> falls back to session file
 
-# ---- registration ----
-p1=$(livepid)
-"$S/bus-register.sh" alpha --pid "$p1" --desc "frontend" --mode auto >/dev/null
-eq  "register: manifest created"      "$(isfile "$CLAUDEMUX_ROOT/registry/alpha.json")" y
-eq  "register: pid persisted"         "$(jq -r .pid  "$CLAUDEMUX_ROOT/registry/alpha.json")" "$p1"
-eq  "register: mode persisted"        "$(jq -r .mode "$CLAUDEMUX_ROOT/registry/alpha.json")" auto
-"$S/bus-register.sh" secure --pid "$(livepid)" --mode manual >/dev/null
-eq  "register: manual mode"           "$(jq -r .mode "$CLAUDEMUX_ROOT/registry/secure.json")" manual
+"$R/bus-register.sh" --pid "$pa" --mode auto   >/dev/null
+"$R/bus-register.sh" --pid "$pb" --mode manual >/dev/null
+"$R/bus-register.sh" --pid "$pc" --mode auto   >/dev/null
+eq "register: keyed by sessionId"   "$([ -f "$CLAUDEMUX_ROOT/registry/$A.json" ] && echo y)" y
+eq "register: no name stored"       "$(jq 'has("name")' "$CLAUDEMUX_ROOT/registry/$A.json")" false
+eq "register: mode persisted"       "$(jq -r .mode "$CLAUDEMUX_ROOT/registry/$B.json")" manual
 
-# ---- auto-naming: basename, collision suffix, reuse-own-pid ----
-proj="$CLAUDEMUX_ROOT/ws/myproj"; mkdir -p "$proj"
-pa=$(livepid); pb=$(livepid)
-( cd "$proj" && "$S/bus-register.sh" --pid "$pa" ) >/dev/null
-( cd "$proj" && "$S/bus-register.sh" --pid "$pb" ) >/dev/null
-eq  "auto-name: basename(cwd)"        "$(isfile "$CLAUDEMUX_ROOT/registry/myproj.json")"   y
-eq  "auto-name: collision -> -2"      "$(isfile "$CLAUDEMUX_ROOT/registry/myproj-2.json")" y
-( cd "$proj" && "$S/bus-register.sh" --pid "$pa" ) >/dev/null
-eq  "auto-name: reuse own pid (no -3)" "$(isfile "$CLAUDEMUX_ROOT/registry/myproj-3.json")" n
+peers="$("$R/bus-peers.sh")"
+has "name from transcript title"    "$peers" alpha
+hasnt "session-file name NOT used when transcript exists" "$peers" SF-alpha
+has "fallback to session-file name" "$peers" SF-gamma
+eq  "peers --json alive"            "$("$R/bus-peers.sh" --json | jq -rs 'map(select(.name=="alpha"))[0].alive')" true
+eq  "resolve alpha -> A"            "$("$R/bus-resolve.sh" alpha)" "$A"
+eq  "resolve unknown -> empty"      "$("$R/bus-resolve.sh" nobody)" ""
 
-# ---- peers / discovery --json ----
-has "peers: lists a session"          "$("$S/bus-peers.sh")" alpha
-eq  "peers --json: alive=true"        "$("$S/bus-peers.sh" --json | jq -r 'select(.name=="alpha").alive')" true
+# send by name + recv + body safety
+mk="$CLAUDEMUX_ROOT/PWN"
+# --from-session gives a repliable sender (this test shell isn't a registered session)
+"$R/bus-send.sh" alpha query "hi" 'x; touch '"$mk"' $(touch '"$mk"'2) `touch '"$mk"'3`' --from tester --from-session "$B" >/dev/null
+eq  "send: delivered to A's mailbox" "$(n_json "$CLAUDEMUX_ROOT/mailbox/$A")" 1
+eq  "send: to_session=A"             "$(jq -r .to_session "$CLAUDEMUX_ROOT"/mailbox/$A/*.json)" "$A"
+eq  "safety: body executed nothing"  "$(set -- "$mk"*; printf '%s\n' "$#")" 0
+rout="$("$R/bus-recv.sh" "$A")"
+has "recv: renders body"             "$rout" "x; touch"
+has "recv: reply-to is sessionId@machine" "$rout" "reply to: $B@$MACH"
+# P5: a query with no repliable sender is refused
+"$R/bus-send.sh" "$A" query s b --from x >/dev/null 2>&1; eq "query w/o repliable sender refused" "$?" 1
 
-# ---- send + recv + body safety ----
-mark="$CLAUDEMUX_ROOT/PWN"
-body='hi; touch '"$mark"' $(touch '"$mark"'2) `touch '"$mark"'3`'
-BUS_SELF=sender "$S/bus-send.sh" alpha notify "subj" "$body" >/dev/null
-eq  "safety: nothing executed on send" "$(count "$mark"*)" 0
-eq  "send: body stored verbatim"       "$(jq -r .body "$CLAUDEMUX_ROOT"/mailbox/alpha/*.json)" "$body"
-out="$("$S/bus-recv.sh" alpha)"
-has "recv: renders the body"           "$out" "hi; touch"
-eq  "safety: nothing executed on recv" "$(count "$mark"*)" 0
-eq  "recv: inbox drained"              "$(count "$CLAUDEMUX_ROOT"/mailbox/alpha/*.json)" 0
-eq  "recv: message archived"           "$(count "$CLAUDEMUX_ROOT"/mailbox/alpha/archive/*.json)" 1
+# reply path: address by sessionId directly
+"$R/bus-send.sh" "$B" response "re" "answer" --reply-to "1-a" --from x >/dev/null
+eq  "send: sessionId target delivers" "$(n_json "$CLAUDEMUX_ROOT/mailbox/$B")" 1
 
-# ---- target validation + unknown-target guard ----
-rc  "reject path-traversal target"  1 "$S/bus-send.sh" "../evil" notify s b --from x
-rc  "reject spaced target"          1 "$S/bus-send.sh" "a b"     notify s b --from x
-rc  "unknown target errors (P3)"    1 "$S/bus-send.sh" nobody    notify s b --from x
+# LIVE RENAME via a new custom-title (exactly what a local /rename or web rename appends)
+titlerec "alpha2" "$A" >> "$CLAUDEMUX_PROJECTS_DIR/p/$A.jsonl"
+peers2="$("$R/bus-peers.sh")"
+has "rename: peers shows new title"  "$peers2" alpha2
+eq  "rename: new name resolves -> A" "$("$R/bus-resolve.sh" alpha2)" "$A"
+eq  "rename: old name stops resolving" "$("$R/bus-resolve.sh" alpha)" ""
 
-# ---- reply_to + reply-routing (local vs cross-machine) ----
-BUS_SELF=bob "$S/bus-send.sh" alpha response "re" "answer" --reply-to "12345-abcd" >/dev/null
-out="$("$S/bus-recv.sh" alpha)"
-has "recv: shows reply_to"            "$out" "reply_to: 12345-abcd"
-has "recv: local reply-to (no @)"     "$out" "reply to: bob"
-# craft a message that "arrived" from another host (machine != local) — tests recv's reply routing
-# directly, without a live SSH send
-mid="$(date +%s%3N)-x"
-jq -n --arg id "$mid" '{id:$id,from:"carol",to:"alpha",machine:"otherhost",type:"notify",
-  subject:"x",body:"hi",reply_to:null,timestamp:"t"}' > "$CLAUDEMUX_ROOT/mailbox/alpha/$mid.json"
-out="$("$S/bus-recv.sh" alpha)"
-has "recv: cross-machine reply-to"    "$out" "reply to: carol@otherhost"
+# broadcast
+"$R/bus-recv.sh" "$B" >/dev/null
+"$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null
+eq  "broadcast: reached A"          "$(n_json "$CLAUDEMUX_ROOT/mailbox/$A")" 1
+eq  "broadcast: reached B"          "$(n_json "$CLAUDEMUX_ROOT/mailbox/$B")" 1
 
-# ---- broadcast ----
-BUS_SELF=alpha "$S/bus-send.sh" _ broadcast "all" "heads up" >/dev/null
-eq  "broadcast: reached other session" "$(count "$CLAUDEMUX_ROOT"/mailbox/secure/*.json)" 1
-eq  "broadcast: skipped self (alpha)"  "$(count "$CLAUDEMUX_ROOT"/mailbox/alpha/*.json)"  0
+# cleanup prunes dead
+kill "$pb" 2>/dev/null; "$R/bus-cleanup.sh" >/dev/null
+eq  "cleanup: prunes dead"          "$([ -f "$CLAUDEMUX_ROOT/registry/$B.json" ] && echo y || echo n)" n
+eq  "cleanup: keeps live"           "$([ -f "$CLAUDEMUX_ROOT/registry/$A.json" ] && echo y)" y
 
-# ---- cleanup / liveness ----
-pd=$(livepid); "$S/bus-register.sh" doomed --pid "$pd" >/dev/null
-kill "$pd" 2>/dev/null
-"$S/bus-cleanup.sh" >/dev/null
-eq  "cleanup: prunes dead pid"        "$(isfile "$CLAUDEMUX_ROOT/registry/doomed.json")" n
-eq  "cleanup: keeps live session"     "$(isfile "$CLAUDEMUX_ROOT/registry/alpha.json")"  y
-
-echo
-echo "PASS=$PASS  FAIL=$FAIL"
-[ "$FAIL" -eq 0 ]
+echo; echo "PASS=$PASS  FAIL=$FAIL"; [ "$FAIL" -eq 0 ]

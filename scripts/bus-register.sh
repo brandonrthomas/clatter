@@ -1,54 +1,34 @@
 #!/usr/bin/env bash
-# Register this session in the bus registry. With --name it's explicit; without, the name is
-# auto-derived from cwd basename (collision-suffixed, and this pid's existing entry is reused
-# on a re-run so SessionStart on resume/clear doesn't mint a duplicate).
+# Register this session on the bus, keyed by its Claude sessionId (stable). The human name is NOT
+# stored here — it's resolved live from Claude's session file at display/address time.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_bus_common.sh"
 
-name="" desc="" mode="auto" pid=""
+sid="" pid="" mode="auto" cwd="" machine="$BUS_SELF_MACHINE"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --name) name="$2"; shift 2 ;;
-    --desc) desc="$2"; shift 2 ;;
-    --mode) mode="$2"; shift 2 ;;   # auto (relay may wake) | manual (never send-keys)
-    --pid)  pid="$2";  shift 2 ;;
-    *) [ -z "$name" ] && name="$1"; shift ;;
+    --sessionid) sid="$2"; shift 2 ;;
+    --pid)       pid="$2"; shift 2 ;;
+    --mode)      mode="$2"; shift 2 ;;
+    --cwd)       cwd="$2"; shift 2 ;;
+    --machine)   machine="$2"; shift 2 ;;
+    *) shift ;;
   esac
 done
 
 [ -z "$pid" ] && pid="$(bus_find_claude_pid "$$" || true)"
-[ -z "$pid" ] && { echo "could not resolve claude pid; pass --pid" >&2; exit 1; }
-tty="$(bus_pid_to_tty "$pid" || true)"
-cwd="$(pwd)"
-started="$(date -Is)"
-mkdir -p "$BUS_REG"
+[ -z "$pid" ] && { echo "bus-register: could not resolve claude pid; pass --pid" >&2; exit 1; }
+[ -z "$sid" ] && sid="$(bus_sessionid_of_pid "$pid")"
+[ -z "$sid" ] && { echo "bus-register: could not resolve sessionId for pid $pid; pass --sessionid" >&2; exit 1; }
+[ -z "$cwd" ] && cwd="$(pwd)"
+case "$sid" in ''|*[!A-Za-z0-9_-]*) echo "bus-register: unsafe sessionId '$sid'" >&2; exit 1 ;; esac
 
-# Auto-name: reuse this pid's existing entry if any, else basename(cwd), suffixed on live collision.
-if [ -z "$name" ]; then
-  for f in "$BUS_REG"/*.json; do
-    [ -e "$f" ] || continue
-    [ "$(jq -r '.pid' "$f" 2>/dev/null)" = "$pid" ] && { name="$(basename "$f" .json)"; break; }
-  done
-fi
-if [ -z "$name" ]; then
-  base="$(basename "$cwd" | tr -c 'A-Za-z0-9_-' '-' | sed 's/^-*//; s/-*$//')"
-  [ -z "$base" ] && base="session"
-  name="$base"; n=1
-  while [ -f "$BUS_REG/$name.json" ]; do
-    op="$(jq -r '.pid' "$BUS_REG/$name.json" 2>/dev/null)"
-    if [ -z "$op" ] || [ "$op" = "null" ] || [ "$op" = "$pid" ] || ! bus_alive "$op"; then break; fi
-    n=$((n+1)); name="$base-$n"
-  done
-fi
-name="$(printf '%s' "$name" | tr -c 'A-Za-z0-9_-' '-')"   # sanitize (also constrains explicit names)
-
-mkdir -p "$BUS_MBX/$name/archive"
-tmp="$BUS_REG/.$name.$$.tmp"
-jq -n \
-  --arg name "$name" --arg machine "$BUS_SELF_MACHINE" --argjson pid "$pid" \
-  --arg tty "$tty" --arg cwd "$cwd" --arg started "$started" --arg desc "$desc" --arg mode "$mode" \
-  '{name:$name, machine:$machine, pid:$pid, tty:$tty, cwd:$cwd, started:$started, description:$desc, mode:$mode}' \
-  > "$tmp"
-mv "$tmp" "$BUS_REG/$name.json"
-echo "registered '$name' (pid $pid, tty ${tty:-none}, mode $mode)"
+mkdir -p "$BUS_REG" "$BUS_MBX/$sid/archive"
+tmp="$BUS_REG/.$sid.$$.tmp"
+jq -n --arg sid "$sid" --argjson pid "$pid" --arg machine "$machine" --arg cwd "$cwd" \
+      --arg mode "$mode" --arg started "$(date -Is)" \
+  '{sessionId:$sid, pid:$pid, machine:$machine, cwd:$cwd, mode:$mode, started:$started}' > "$tmp"
+mv "$tmp" "$BUS_REG/$sid.json"
+name="$(bus_name_of_pid "$pid")"; [ -n "$name" ] || name="$(basename "$cwd")"
+echo "registered '$name' (session $sid, pid $pid, mode $mode)"

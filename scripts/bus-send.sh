@@ -1,107 +1,90 @@
 #!/usr/bin/env bash
-# Send a message to another session's mailbox (local, or over ssh to a peer machine).
+# Send a message. Target is a human NAME (resolved live to a sessionId) or a sessionId directly,
+# optionally @machine. Mailboxes are keyed by sessionId, so a peer renaming itself never misroutes.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_bus_common.sh"
 
-reply_to="" from="${BUS_SELF:-}" pos=()
+reply_to="" from="" from_session_arg="" pos=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --reply-to) reply_to="$2"; shift 2 ;;
-    --from)     from="$2";     shift 2 ;;
+    --reply-to)     reply_to="$2"; shift 2 ;;
+    --from)         from="$2"; shift 2 ;;
+    --from-session) from_session_arg="$2"; shift 2 ;;
     *) pos+=("$1"); shift ;;
   esac
 done
 target="${pos[0]:-}"; type="${pos[1]:-}"; subject="${pos[2]:-}"; body="${pos[3]:-}"
 if [ -z "$target" ] || [ -z "$type" ]; then
-  echo "usage: bus-send.sh <target[@machine]> <query|response|notify|broadcast> <subject> <body> [--reply-to id] [--from name]" >&2
+  echo "usage: bus-send.sh <name|sessionId[@machine]> <query|response|notify|broadcast> <subject> <body> [--reply-to id] [--from name]" >&2
   exit 1
 fi
-# Optional explicit routing: target@machine sends over SSH to <machine> (an ssh host/alias).
-target_machine=""
-case "$target" in
-  *@*) target_machine="${target##*@}"; target="${target%@*}" ;;
-esac
-# target/machine become filesystem paths and parts of an ssh command line — constrain both so they
-# can't traverse paths or inject a remote shell. (broadcast's placeholder "_" passes.)
-case "$target" in
-  ''|*[!A-Za-z0-9_-]*) echo "bus-send: invalid target name '$target'" >&2; exit 1 ;;
-esac
-case "$target_machine" in
-  *[!A-Za-z0-9_.-]*) echo "bus-send: invalid machine '$target_machine'" >&2; exit 1 ;;
-esac
 
-# Resolve own name if not given: match a registry entry to this session's claude pid.
-if [ -z "$from" ]; then
-  mypid="$(bus_find_claude_pid "$$" || true)"
-  if [ -n "$mypid" ]; then
-    for f in "$BUS_REG"/*.json; do
-      [ -e "$f" ] || continue
-      [ "$(jq -r '.pid' "$f" 2>/dev/null)" = "$mypid" ] && { from="$(basename "$f" .json)"; break; }
-    done
-  fi
+tmachine=""
+case "$target" in *@*) tmachine="${target##*@}"; target="${target%@*}" ;; esac
+case "$tmachine" in *[!A-Za-z0-9_.-]*) echo "bus-send: invalid machine '$tmachine'" >&2; exit 1 ;; esac
+
+# --- sender identity (live) ---
+from_session="${from_session_arg:-$(bus_self_sid || true)}"; [ -z "$from_session" ] && from_session="unknown"
+[ -z "$from" ] && from="$(bus_self_name)"
+# A query expects a reply, so it needs a repliable sender. Refuse to send one from a context we
+# can't identify (e.g. outside a registered session) rather than emit an unrepliable message.
+if [ "$type" = "query" ] && [ "$from_session" = "unknown" ]; then
+  echo "bus-send: refusing to send a query with no repliable sender (this session isn't on the bus)" >&2
+  exit 1
 fi
-[ -z "$from" ] && from="$(basename "$(pwd)")"
 
 id="$(date +%s%3N)-$(printf '%04x' $((RANDOM)))"
 ts="$(date -Is)"
 
-# broadcast: fan out as notify to every other live session
+# --- broadcast: to every live LOCAL session (by sessionId) except self ---
 if [ "$type" = "broadcast" ]; then
+  shopt -s nullglob
   for f in "$BUS_REG"/*.json; do
-    [ -e "$f" ] || continue
-    t="$(basename "$f" .json)"
-    [ "$t" = "$from" ] && continue
-    "$0" "$t" notify "$subject" "$body" --from "$from"
+    s="$(jq -r '.sessionId' "$f" 2>/dev/null)"; [ "$s" = "$from_session" ] && continue
+    bus_alive "$(jq -r '.pid' "$f" 2>/dev/null)" || continue
+    "$0" "$s" notify "$subject" "$body" --from "$from"
   done
   exit 0
 fi
 
-# Where does the target live? explicit @machine wins; else the local registry; else search peer
-# hosts (cross-machine discovery); else default to this machine.
-tmachine="$BUS_SELF_MACHINE"
-if [ -n "$target_machine" ]; then
-  tmachine="$target_machine"
-elif [ -f "$BUS_REG/$target.json" ]; then
-  tmachine="$(jq -r '.machine' "$BUS_REG/$target.json")"
-elif [ "$type" != "broadcast" ] && [ -f "$BUS_ROOT/peers" ]; then
-  # Not a local session: look for it on a peer host (first match wins; use name@machine to force one).
-  while IFS= read -r m; do
-    m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
-    if $BUS_SSH "$m" \
-         "test -f \"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}/registry/$target.json\"" </dev/null 2>/dev/null; then
-      tmachine="$m"; break
-    fi
-  done < "$BUS_ROOT/peers"
+# --- resolve target -> (to_session, tmachine) ---
+to_session=""
+if bus_is_uuid "$target"; then
+  to_session="$target"; [ -z "$tmachine" ] && tmachine="$BUS_SELF_MACHINE"
+elif [ -n "$tmachine" ] && [ "$tmachine" != "$BUS_SELF_MACHINE" ]; then
+  # name on an explicit remote machine (name piped in — never interpolated into the remote command)
+  to_session="$(printf '%s' "$target" | $BUS_SSH "$tmachine" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
+else
+  to_session="$("$DIR/bus-resolve.sh" "$target" 2>/dev/null || true)"
+  if [ -n "$to_session" ]; then
+    tmachine="$BUS_SELF_MACHINE"
+  elif [ -f "$BUS_ROOT/peers" ]; then
+    while IFS= read -r m; do
+      m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
+      r="$(printf '%s' "$target" | $BUS_SSH "$m" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
+      [ -n "$r" ] && { to_session="$r"; tmachine="$m"; break; }
+    done < "$BUS_ROOT/peers"
+  fi
 fi
-
-# Fail fast on an unknown target instead of dropping a message the relay will never wake.
-if [ -z "$target_machine" ] && [ "$tmachine" = "$BUS_SELF_MACHINE" ] && [ ! -f "$BUS_REG/$target.json" ]; then
-  echo "bus-send: no session named '$target' found (local or on peers)" >&2
-  exit 1
-fi
+[ -z "$to_session" ] && { echo "bus-send: no session '${target}'${tmachine:+@$tmachine} found (local or on peers)" >&2; exit 1; }
+case "$to_session" in *[!A-Za-z0-9_-]*) echo "bus-send: resolved unsafe sessionId '$to_session'" >&2; exit 1 ;; esac
 
 build_msg() {
-  jq -n \
-    --arg id "$id" --arg from "$from" --arg to "$target" --arg machine "$BUS_SELF_MACHINE" \
-    --arg type "$type" --arg subject "$subject" --arg body "$body" \
-    --arg reply_to "$reply_to" --arg ts "$ts" \
-    '{id:$id, from:$from, to:$to, machine:$machine, type:$type, subject:$subject,
-      body:$body, reply_to:(if $reply_to=="" then null else $reply_to end), timestamp:$ts}'
+  jq -n --arg id "$id" --arg from "$from" --arg fs "$from_session" --arg to "$to_session" \
+        --arg machine "$BUS_SELF_MACHINE" --arg type "$type" --arg subject "$subject" --arg body "$body" \
+        --arg reply_to "$reply_to" --arg ts "$ts" \
+    '{id:$id, from:$from, from_session:$fs, to_session:$to, machine:$machine, type:$type,
+      subject:$subject, body:$body, reply_to:(if $reply_to=="" then null else $reply_to end), timestamp:$ts}'
 }
 
-if [ -z "$tmachine" ] || [ "$tmachine" = "null" ] || [ "$tmachine" = "$BUS_SELF_MACHINE" ]; then
-  mkdir -p "$BUS_MBX/$target/archive"
-  tmp="$BUS_MBX/$target/.$id.tmp"
-  build_msg > "$tmp"
-  mv "$tmp" "$BUS_MBX/$target/$id.json"
-  echo "sent $type -> $target (id $id)"
+if [ -z "$tmachine" ] || [ "$tmachine" = "$BUS_SELF_MACHINE" ]; then
+  mkdir -p "$BUS_MBX/$to_session/archive"
+  tmp="$BUS_MBX/$to_session/.$id.tmp"; build_msg > "$tmp"; mv "$tmp" "$BUS_MBX/$to_session/$id.json"
+  echo "sent $type -> $target (session $to_session, id $id)"
 else
-  # Remote peer: atomic tmp+rename drop over ssh. The mailbox path is computed on the REMOTE side
-  # from its own $CLAUDEMUX_ROOT/$HOME, so machines with different home dirs work. target/id are
-  # charset-validated above, so they are safe to interpolate into the remote command.
   build_msg | $BUS_SSH "$tmachine" \
-    "R=\"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}\"; d=\"\$R/mailbox/$target\"; \
+    "R=\"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}\"; d=\"\$R/mailbox/$to_session\"; \
      mkdir -p \"\$d/archive\" && cat > \"\$d/.$id.tmp\" && mv \"\$d/.$id.tmp\" \"\$d/$id.json\""
-  echo "sent $type -> $target@$tmachine (id $id)"
+  echo "sent $type -> $target@$tmachine (session $to_session, id $id)"
 fi
