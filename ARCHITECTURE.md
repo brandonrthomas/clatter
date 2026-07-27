@@ -154,8 +154,7 @@ first match — use `name@machine` or the sessionId to disambiguate.
 ## Cross-machine
 
 Address a peer explicitly as `name@machine` (an SSH host/alias). `bus-send.sh` drops the message
-into that host's mailbox over SSH, computing the mailbox path from the **remote** host's
-`$CLAUDEMUX_ROOT`/`$HOME` — so hosts with different home directories work. The peer's own relay wakes
+into that host's mailbox over SSH. The peer's own relay wakes
 the pane, and `bus-recv.sh` renders a `reply to: <from_session>@<machine>` target (a sessionId, so
 replies survive a rename). This reuses your existing SSH keys; verified host↔host in both directions.
 

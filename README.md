@@ -107,6 +107,10 @@ From inside any session:
 /cm recv                        # read your inbox (the relay normally triggers this for you)
 ```
 
+Everywhere above, `<name>` is a peer's **Claude session name** — the name `/rename` sets, shown in
+its tab — matched live, so it always tracks the session's current name. (Leave a session unnamed and
+it uses Claude's auto-generated name, e.g. `host-quiet-tome`.)
+
 `/cm ask` doesn't block — you keep working; when the peer answers, the relay wakes your pane and
 the reply appears inline.
 
