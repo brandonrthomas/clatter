@@ -121,7 +121,7 @@ stores that literal string as a message (it is never executed).
 Then `/cm peers` aggregates their live sessions (shown as `name@host`), and `/cm ask <name> <question>`
 auto-locates a peer across those hosts — or address one explicitly as `name@host`. The message is
 dropped over SSH into that host's mailbox and its relay wakes the pane; replies route back
-automatically. Works even when the hosts have different home directories. Requires Claudemux on each
+automatically. Requires Claudemux on each
 host and key-based SSH between them.
 
 ## Configuration
