@@ -12,6 +12,8 @@ panes, no human relay.
 
 <br>
 
+---
+
 ```
   session "frontend"                     relay (per machine)                    session "api"
   ──────────────────                     ───────────────────                    ─────────────
