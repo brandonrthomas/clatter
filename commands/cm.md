@@ -1,6 +1,6 @@
 ---
 description: Claudemux — talk to other Claude Code sessions
-argument-hint: peers | ask <target> <what to say> | send <target> <what to say> | broadcast <what to say> | recv | clear | status | doctor
+argument-hint: peers | ask <target> <what to say> | send <target> <what to say> | broadcast <what to say> | recv | clear | mode [auto|manual] | desc [text] | status | doctor
 allowed-tools: Bash(bash:*)
 ---
 Handle this Claudemux request by calling the CLI **with the Bash tool** (do NOT use a `!` shell
@@ -12,8 +12,12 @@ The requested arguments are, verbatim:
 
     $ARGUMENTS
 
-Subcommands `peers`, `status`, `recv`, `clear`, `doctor` take no message — just run them and show the output.
-(`clear` archives all pending inbox messages without reading them; `doctor` checks the manual-mode guard.)
+Subcommands `peers`, `status`, `recv`, `clear`, `doctor` take no message; `mode` and `desc` take a
+literal argument (`mode auto|manual`, `desc <text>`) — pass it through verbatim, do NOT compose or
+reword. Just run them and show the output.
+(`clear` archives pending inbox messages without reading them; `doctor` checks the manual-mode
+guard; `mode` sets whether the relay may wake this session; `desc` sets this session's description,
+shown in the DESC column of `/cm peers`.)
 For `ask` / `send` (`<target>` then message) and `broadcast` (message only), build `<message>` like so:
 
 - **If the message begins with `*`**: strip that single leading `*` and send the rest **verbatim** —

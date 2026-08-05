@@ -127,6 +127,20 @@ eq "clear: two messages pending"    "$(n_json "$CLAUDEMUX_ROOT/mailbox/$CS")" 2
 eq "clear: inbox emptied"           "$(n_json "$CLAUDEMUX_ROOT/mailbox/$CS")" 0
 eq "clear: archived, not deleted"   "$(set -- "$CLAUDEMUX_ROOT/mailbox/$CS/archive"/*.json; printf '%s' "$#")" 2
 
+# --- /cm mode: flip a session's mode in the registry (live) ---
+"$R/bus-mode.sh" manual "$C" >/dev/null
+eq "mode: flipped to manual"       "$(jq -r .mode "$CLAUDEMUX_ROOT/registry/$C.json")" manual
+"$R/bus-mode.sh" auto "$C" >/dev/null
+eq "mode: flipped back to auto"    "$(jq -r .mode "$CLAUDEMUX_ROOT/registry/$C.json")" auto
+"$R/bus-mode.sh" bogus "$C" >/dev/null 2>&1; eq "mode: rejects invalid value" "$?" 1
+
+# --- /cm desc: set / show in peers / clear ---
+"$R/bus-desc.sh" --sid "$C" working on the relay >/dev/null
+eq  "desc: stored on the entry"    "$(jq -r '.desc' "$CLAUDEMUX_ROOT/registry/$C.json")" "working on the relay"
+has "desc: shown in /cm peers"     "$("$R/bus-peers.sh")" "working on the relay"
+"$R/bus-desc.sh" --sid "$C" --clear >/dev/null
+eq  "desc: cleared"                "$(jq -r '.desc' "$CLAUDEMUX_ROOT/registry/$C.json")" ""
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null

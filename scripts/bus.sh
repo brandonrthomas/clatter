@@ -46,11 +46,17 @@ case "$cmd" in
   clear)
     "$DIR/bus-clear.sh"
     ;;
+  mode)
+    "$DIR/bus-mode.sh" "$@"
+    ;;
+  desc|describe)
+    "$DIR/bus-desc.sh" "$@"
+    ;;
   doctor)
     "$DIR/bus-doctor.sh"
     ;;
   *)
-    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | clear | status | doctor}"
+    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | clear | mode [auto|manual] | desc [text] | status | doctor}"
     exit 1
     ;;
 esac

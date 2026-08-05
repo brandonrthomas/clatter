@@ -10,17 +10,19 @@ shopt -s nullglob
 
 if [ "${1:-}" = "--json" ]; then
   bus_local_roster | while IFS="$(printf '\t')" read -r sid pid mode name; do
-    jq -cn --arg name "$name" --arg sid "$sid" --arg machine "$BUS_SELF_MACHINE" --arg mode "$mode" \
-      '{name:$name, sessionId:$sid, machine:$machine, mode:$mode, alive:true}'
+    desc="$(jq -r '.desc // ""' "$BUS_REG/$sid.json" 2>/dev/null || true)"
+    jq -cn --arg name "$name" --arg sid "$sid" --arg machine "$BUS_SELF_MACHINE" --arg mode "$mode" --arg desc "$desc" \
+      '{name:$name, sessionId:$sid, machine:$machine, mode:$mode, desc:$desc, alive:true}'
   done
   exit 0
 fi
 
-row() { printf '%-20s %-8s %-6s %s\n' "$1" "$2" "$3" "$4"; }
-row NAME MACHINE ALIVE MODE
+row() { printf '%-20s %-8s %-6s %-7s %s\n' "$1" "$2" "$3" "$4" "${5:-}"; }
+row NAME MACHINE ALIVE MODE DESC
 
 bus_local_roster | while IFS="$(printf '\t')" read -r sid pid mode name; do
-  row "$name" "$BUS_SELF_MACHINE" yes "$mode"
+  desc="$(jq -r '.desc // ""' "$BUS_REG/$sid.json" 2>/dev/null || true)"
+  row "$name" "$BUS_SELF_MACHINE" yes "$mode" "$desc"
 done
 
 pf="$BUS_ROOT/peers"
@@ -33,8 +35,9 @@ if [ -f "$pf" ]; then
     while IFS= read -r j; do
       [ -z "$j" ] && continue
       name=$(printf '%s' "$j" | jq -r '.name'); mode=$(printf '%s' "$j" | jq -r '.mode')
+      desc=$(printf '%s' "$j" | jq -r '.desc // ""')
       al=$(printf '%s' "$j" | jq -r 'if .alive then "yes" else "DEAD" end')
-      row "${name}@${m}" "$m" "$al" "$mode"
+      row "${name}@${m}" "$m" "$al" "$mode" "$desc"
     done <<< "$jlines"
   done < "$pf"
 fi
