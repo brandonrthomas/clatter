@@ -102,6 +102,22 @@ r1="$("$R/bus-resolve.sh" dup)"; r2="$("$R/bus-resolve.sh" dup-2)"
 inset(){ case " $D1 $D2 " in *" $1 "*) return 0 ;; esac; return 1; }
 eq "dup: 'dup' and 'dup-2' resolve to the two distinct sessions" "$([ "$r1" != "$r2" ] && inset "$r1" && inset "$r2" && echo ok)" ok
 
+# --- rename-into-collision notifies the mover (bus-namecheck), start-collisions do not ---
+G1="99999999-1111-1111-1111-111111111111"; G2="99999999-2222-2222-2222-222222222222"
+pg1=$(mksess "$G1" "foo" "/x/foo"); pg2=$(mksess "$G2" "bar" "/x/bar")
+"$R/bus-register.sh" --pid "$pg1" --mode auto >/dev/null
+"$R/bus-register.sh" --pid "$pg2" --mode auto >/dev/null
+"$R/bus-namecheck.sh"                                    # baseline snapshot: foo, bar (distinct)
+eq "namecheck: no false notify at baseline"      "$(n_json "$CLAUDEMUX_ROOT/mailbox/$G2")" 0
+titlerec "foo" "$G2" >> "$CLAUDEMUX_PROJECTS_DIR/p/$G2.jsonl"   # bar -> foo : a rename into a collision
+"$R/bus-namecheck.sh"
+eq "namecheck: the renamer is notified"          "$(n_json "$CLAUDEMUX_ROOT/mailbox/$G2")" 1
+eq "namecheck: the earlier holder is NOT"        "$(n_json "$CLAUDEMUX_ROOT/mailbox/$G1")" 0
+has "namecheck: notice says name collision"      "$(jq -r '.subject' "$CLAUDEMUX_ROOT"/mailbox/$G2/*.json)" "name collision"
+"$R/bus-namecheck.sh"                                    # idempotent — no second notice
+eq "namecheck: not re-notified on the next run"  "$(n_json "$CLAUDEMUX_ROOT/mailbox/$G2")" 1
+"$R/bus-recv.sh" "$G2" >/dev/null                        # drain so it doesn't skew later counts
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null

@@ -12,6 +12,15 @@ mkdir -p "$BUS_MBX"
 log() { echo "$(date -Is) $*" >> "$LOG"; }
 log "relay starting; watching $BUS_MBX"
 
+# Periodic name-collision check: notifies a session that /rename'd onto a name already in use. It
+# drops a notice into that session's mailbox, which this relay then delivers via the normal wake.
+# Set CLAUDEMUX_NAMECHECK_INTERVAL=0 to disable. Runs in the background; dies with the relay (cgroup).
+NAMECHECK_INT="${CLAUDEMUX_NAMECHECK_INTERVAL:-10}"
+if [ "$NAMECHECK_INT" -gt 0 ] 2>/dev/null; then
+  ( while sleep "$NAMECHECK_INT"; do "$DIR/../scripts/bus-namecheck.sh" >>"$LOG" 2>&1 || true; done ) &
+  log "namecheck heartbeat every ${NAMECHECK_INT}s (pid $!)"
+fi
+
 wake() {
   local target="$1" reg="$BUS_REG/$1.json" mode pid tty pane
   [ -f "$reg" ] || { log "no registry for '$target'; skip"; return; }
