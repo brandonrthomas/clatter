@@ -1,6 +1,6 @@
 ---
 description: Claudemux — talk to other Claude Code sessions
-argument-hint: peers | ask <target> <what to say> | send <target> <what to say> | broadcast <what to say> | recv | status
+argument-hint: peers | ask <target> <what to say> | send <target> <what to say> | broadcast <what to say> | recv | clear | status | doctor
 allowed-tools: Bash(bash:*)
 ---
 Handle this Claudemux request by calling the CLI **with the Bash tool** (do NOT use a `!` shell
@@ -12,7 +12,8 @@ The requested arguments are, verbatim:
 
     $ARGUMENTS
 
-Subcommands `peers`, `status`, `recv` take no message — just run them and show the output.
+Subcommands `peers`, `status`, `recv`, `clear`, `doctor` take no message — just run them and show the output.
+(`clear` archives all pending inbox messages without reading them; `doctor` checks the manual-mode guard.)
 For `ask` / `send` (`<target>` then message) and `broadcast` (message only), build `<message>` like so:
 
 - **If the message begins with `*`**: strip that single leading `*` and send the rest **verbatim** —

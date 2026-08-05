@@ -118,6 +118,15 @@ has "namecheck: notice says name collision"      "$(jq -r '.subject' "$CLAUDEMUX
 eq "namecheck: not re-notified on the next run"  "$(n_json "$CLAUDEMUX_ROOT/mailbox/$G2")" 1
 "$R/bus-recv.sh" "$G2" >/dev/null                        # drain so it doesn't skew later counts
 
+# --- clear inbox: archive pending without reading ---
+CS="abcdef00-1111-2222-3333-444444444444"
+"$R/bus-send.sh" "$CS" notify n1 b1 --from x >/dev/null
+"$R/bus-send.sh" "$CS" notify n2 b2 --from x >/dev/null
+eq "clear: two messages pending"    "$(n_json "$CLAUDEMUX_ROOT/mailbox/$CS")" 2
+"$R/bus-clear.sh" "$CS" >/dev/null
+eq "clear: inbox emptied"           "$(n_json "$CLAUDEMUX_ROOT/mailbox/$CS")" 0
+eq "clear: archived, not deleted"   "$(set -- "$CLAUDEMUX_ROOT/mailbox/$CS/archive"/*.json; printf '%s' "$#")" 2
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null

@@ -43,11 +43,14 @@ case "$cmd" in
   recv)
     "$DIR/bus-recv.sh"
     ;;
+  clear)
+    "$DIR/bus-clear.sh"
+    ;;
   doctor)
     "$DIR/bus-doctor.sh"
     ;;
   *)
-    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | status | doctor}"
+    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | clear | status | doctor}"
     exit 1
     ;;
 esac
