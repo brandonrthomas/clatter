@@ -33,7 +33,8 @@ case "$cmd" in
     if [ -z "$sid" ]; then
       echo "this session is not registered on the bus"
     else
-      echo "this session: \"$(bus_self_name)\"  (session $sid)"
+      uname="$(bus_unique_name_of_sid "$sid")"; [ -n "$uname" ] || uname="$(bus_self_name)"
+      echo "this session: \"$uname\"  (session $sid)"
       pend=$(find "$BUS_MBX/$sid" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
       echo "pending inbox: $pend message(s)  (run /cm recv to read)"
     fi
@@ -42,8 +43,11 @@ case "$cmd" in
   recv)
     "$DIR/bus-recv.sh"
     ;;
+  doctor)
+    "$DIR/bus-doctor.sh"
+    ;;
   *)
-    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | status}"
+    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | status | doctor}"
     exit 1
     ;;
 esac

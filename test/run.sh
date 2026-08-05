@@ -76,6 +76,32 @@ has "rename: peers shows new title"  "$peers2" alpha2
 eq  "rename: new name resolves -> A" "$("$R/bus-resolve.sh" alpha2)" "$A"
 eq  "rename: old name stops resolving" "$("$R/bus-resolve.sh" alpha)" ""
 
+# --- fail-open manual-patterns guard + cm doctor ---
+. "$R/_bus_common.sh"
+printf '*emr*\n*legal*\n' > "$CLAUDEMUX_ROOT/manual-patterns"
+eq "guard: category globs MISS a real dir (the fail-open bug)" "$(bus_manual_pattern_match /home/x/workspace/acme && echo y || echo n)" n
+printf '*acme*\n' > "$CLAUDEMUX_ROOT/manual-patterns"
+eq "guard: a real-name glob COVERS the dir"                    "$(bus_manual_pattern_match /home/x/workspace/acme && echo y || echo n)" y
+eq "doctor: orphaned guard detected"        "$(bus_manual_patterns_orphaned && echo y || echo n)" y
+"$R/bus-doctor.sh" >/dev/null 2>&1; eq "doctor: orphaned guard exits 1" "$?" 1
+has "peers: warns on an orphaned guard"     "$("$R/bus-peers.sh")" "protect nothing"
+pk=$(mksess "ffffffff-1111-1111-1111-111111111111" "acmesess" "/home/x/workspace/acme")
+"$R/bus-register.sh" --pid "$pk" --cwd /home/x/workspace/acme --mode manual >/dev/null
+eq "doctor: covered guard not orphaned"     "$(bus_manual_patterns_orphaned && echo y || echo n)" n
+"$R/bus-doctor.sh" >/dev/null 2>&1; eq "doctor: covered guard exits 0" "$?" 0
+rm -f "$CLAUDEMUX_ROOT/manual-patterns"
+
+# --- duplicate live names get -2 in display + addressing (delivery still keyed by sessionId) ---
+D1="dddddddd-1111-1111-1111-111111111111"; D2="dddddddd-2222-2222-2222-222222222222"
+pd1=$(mksess "$D1" "dup" "/x/dup"); pd2=$(mksess "$D2" "dup" "/x/dup2")
+"$R/bus-register.sh" --pid "$pd1" --mode auto >/dev/null
+"$R/bus-register.sh" --pid "$pd2" --mode auto >/dev/null
+dpeers="$("$R/bus-peers.sh")"
+has "dup: a -2 suffix appears for the collision" "$dpeers" "dup-2"
+r1="$("$R/bus-resolve.sh" dup)"; r2="$("$R/bus-resolve.sh" dup-2)"
+inset(){ case " $D1 $D2 " in *" $1 "*) return 0 ;; esac; return 1; }
+eq "dup: 'dup' and 'dup-2' resolve to the two distinct sessions" "$([ "$r1" != "$r2" ] && inset "$r1" && inset "$r2" && echo ok)" ok
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null

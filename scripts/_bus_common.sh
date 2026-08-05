@@ -117,3 +117,59 @@ bus_self_name() {
   [ -n "$n" ] || n="$(basename "$(pwd)")"
   printf '%s\n' "$n"
 }
+
+# --- manual-mode guard helpers -------------------------------------------------------------
+# Does cwd $1 match any glob in the manual-patterns file? 0 = yes. Shared by the register hook
+# and `cm doctor` so they can never disagree about what the guard covers.
+bus_manual_pattern_match() {
+  local cwd="$1" pat_file="$BUS_ROOT/manual-patterns" pat
+  [ -f "$pat_file" ] || return 1
+  while IFS= read -r pat; do
+    [ -z "$pat" ] && continue; case "$pat" in \#*) continue ;; esac
+    # shellcheck disable=SC2254  # glob from a trusted local config, matched against a path
+    case "$cwd" in $pat) return 0 ;; esac
+  done < "$pat_file"
+  return 1
+}
+
+# 0 (true) if manual-patterns has at least one active glob but NONE match any live session's cwd
+# — i.e. the guard is set yet protecting nothing (it fails OPEN, silently). Used to warn loudly.
+bus_manual_patterns_orphaned() {
+  local pat_file="$BUS_ROOT/manual-patterns" f cwd
+  [ -f "$pat_file" ] || return 1
+  grep -qE '^[[:space:]]*[^#[:space:]]' "$pat_file" || return 1   # any non-comment glob?
+  for f in "$BUS_REG"/*.json; do
+    [ -e "$f" ] || continue
+    bus_alive "$(jq -r '.pid' "$f" 2>/dev/null)" || continue
+    cwd="$(jq -r '.cwd // ""' "$f" 2>/dev/null)"
+    bus_manual_pattern_match "$cwd" && return 1                   # something matches -> not orphaned
+  done
+  return 0
+}
+
+# --- name disambiguation -------------------------------------------------------------------
+# Emit one line per LIVE LOCAL session:  <sid>\t<pid>\t<mode>\t<unique-name>
+# When several live sessions resolve to the same name, the earliest (by started, then sessionId)
+# keeps the bare name and the rest get -2/-3/... suffixes. These suffixes are display/addressing
+# only — delivery is always keyed by sessionId, so a shifting suffix never misroutes a message.
+bus_local_roster() {
+  local f sid pid mode started base
+  {
+    for f in "$BUS_REG"/*.json; do
+      [ -e "$f" ] || continue
+      pid="$(jq -r '.pid' "$f" 2>/dev/null)"; bus_alive "$pid" || continue
+      sid="$(jq -r '.sessionId' "$f" 2>/dev/null)"
+      mode="$(jq -r '.mode // "auto"' "$f" 2>/dev/null)"
+      started="$(jq -r '.started // ""' "$f" 2>/dev/null)"
+      base="$(bus_display_name "$f")"; base="${base//$'\t'/ }"; base="${base//$'\n'/ }"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$started" "$sid" "$pid" "$mode" "$base"
+    done
+  } | sort -t"$(printf '\t')" -k1,1 -k2,2 | awk -F'\t' '
+    { n = ++cnt[$5]; name = (n==1 ? $5 : $5 "-" n)
+      printf "%s\t%s\t%s\t%s\n", $2, $3, $4, name }'
+}
+
+# This session's own disambiguated (unique) bus name, given its sessionId. Empty if not live.
+bus_unique_name_of_sid() {
+  bus_local_roster | awk -F'\t' -v s="$1" '$1==s{print $4; exit}'
+}

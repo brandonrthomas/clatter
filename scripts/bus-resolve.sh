@@ -11,12 +11,7 @@ want="${1:-}"
 [ "$want" = "--stdin" ] && want="$(cat)"
 [ -z "$want" ] && exit 0
 
-shopt -s nullglob
-for f in "$BUS_REG"/*.json; do
-  bus_alive "$(jq -r '.pid' "$f" 2>/dev/null)" || continue
-  if [ "$(bus_display_name "$f")" = "$want" ]; then
-    jq -r '.sessionId' "$f"
-    exit 0
-  fi
-done
+# Match against the disambiguated roster so "explore" and "explore-2" each resolve to the right
+# session (and a bare name maps to the earliest holder). Delivery is by the sessionId returned here.
+bus_local_roster | awk -F'\t' -v w="$want" '$4==w{print $1; exit}'
 exit 0

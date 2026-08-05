@@ -1,11 +1,21 @@
 # Claudemux manual-mode patterns.
-# Copy this file to  ~/.claude/claudemux/manual-patterns  and uncomment/add globs.
-# Any session whose cwd matches a glob below registers in MANUAL mode: peers can see it in
-# `/cm peers`, but the relay will NEVER type /cm recv into it (no other session can drive a turn
-# there). Use it for sensitive workspaces. One shell glob per line; # starts a comment.
+# Copy this file to  ~/.claude/claudemux/manual-patterns  and add one shell glob per line
+# (# starts a comment). Any session whose CWD matches a glob registers in MANUAL mode: peers can
+# see it in `/cm peers`, but the relay will NEVER type /cm recv into it — no other session can
+# drive a turn there. Use it for sensitive workspaces (EMR, legal, secrets).
 #
-# Examples:
-# *emr*
-# *legal*
-# *secret*
+# READ THIS:
+#   Match your ACTUAL directory names, not the category. The globs are matched against a session's
+#   cwd, so `*emr*` only helps if your EMR work literally lives in a path containing "emr". If your
+#   sensitive dirs are ~/workspace/acme and ~/workspace/zephyr, you need *acme* and *zephyr* — `*emr*`
+#   and `*legal*` would match NOTHING and silently protect nothing.
+#
+#   The guard fails OPEN: a glob that matches nothing looks identical to a working one. After editing
+#   this file, run `cm doctor` to see exactly what it matches. A session's mode is fixed when it
+#   registers, so restart (or re-register) a session after editing this file.
+#
+# Examples (replace with YOUR real directory names):
+# *acme*
+# *zephyr*
 # */clients/*
+# */.secrets/*
