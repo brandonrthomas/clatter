@@ -50,7 +50,8 @@ peer that actually **owns** the answer, in real time, without you in the middle.
 - **Self-cleaning.** Dead sessions are pruned automatically (on contact and on a timer).
 - **Safe by design.** The only thing ever typed into another pane is a fixed control string — never
   message content — so a peer can't inject an arbitrary "user" turn. Sensitive workspaces can be
-  marked read-only to the relay. (See [Security](#security).)
+  marked read-only to the relay, and `/cm doctor` audits that the guard actually covers them. (See
+  [Security](#security).)
 - **Small + legible.** Bash + `jq` + `inotifywait` + `tmux`. One systemd `--user` relay. No server,
   no database, no ports.
 
@@ -74,7 +75,9 @@ Full design in [ARCHITECTURE.md](ARCHITECTURE.md).
   tmux pane. A session outside tmux still works, in manual (poll) mode (see **Manual mode** below).
 - **`jq`** and **systemd** with user services + lingering. **`inotify-tools`** (`inotifywait`) is
   recommended but optional — without it the relay falls back to polling.
-- **Claude Code** (the `claude` CLI) with hooks and custom slash commands.
+- **Claude Code** (the `claude` CLI) with hooks and custom slash commands. Note: `claude --safe-mode`
+  disables *all* customizations — hooks and custom commands don't load — so a safe-mode session won't
+  join the bus or have `/cm`.
 
 ```bash
 sudo apt install jq inotify-tools tmux      # Debian/Ubuntu
@@ -99,17 +102,26 @@ first, preserving everything else), and enables the relay + cleanup timer. Open 
 From inside any session:
 
 ```
-/cm peers                       # who's on the bus (name, machine, alive, mode)
+/cm peers                       # who's on the bus (name, machine, alive, mode, description)
 /cm ask <name> <question>       # ask a peer; the answer returns to THIS pane, asynchronously
 /cm send <name> <message>       # fire-and-forget notify
 /cm broadcast <message>         # notify every live session
-/cm status                      # your own bus name + pending inbox
 /cm recv                        # read your inbox (the relay normally triggers this for you)
+/cm clear                       # archive your inbox without reading it
+/cm status                      # your own bus name + pending inbox
+/cm mode [auto|manual]          # show or set whether the relay may wake this session
+/cm desc [text]                 # show or set this session's description (shown in /cm peers)
+/cm doctor                      # audit the manual-mode guard — what the patterns actually match
 ```
 
 Everywhere above, `<name>` is a peer's **Claude session name** — the name `/rename` sets, shown in
 its tab — matched live, so it always tracks the session's current name. (Leave a session unnamed and
 it uses Claude's auto-generated name, e.g. `host-quiet-tome`.)
+
+If two live sessions resolve to the **same** name, they're disambiguated with a `-2`/`-3` suffix in
+`/cm peers` and when addressing (the earliest keeps the bare name); a session that *renames* into a
+collision gets a heads-up to pick a unique one. The suffix is display/addressing only — delivery is
+keyed by sessionId, so it never misroutes.
 
 `/cm ask` doesn't block — you keep working; when the peer answers, the relay wakes your pane and
 the reply appears inline.
@@ -134,7 +146,7 @@ host and key-based SSH between them.
 |---|---|
 | Install location | `CLAUDEMUX_ROOT` (default `~/.claude/claudemux`) |
 | This machine's name | `CLAUDEMUX_MACHINE` (default `hostname -s`) — used for cross-machine addressing |
-| Read-only workspaces | add globs to `~/.claude/claudemux/manual-patterns` (see `manual-patterns.example`) |
+| Read-only workspaces | add globs matching your **real dir names** to `~/.claude/claudemux/manual-patterns`; verify with `/cm doctor` (see `manual-patterns.example`) |
 | Cross-machine peers | list SSH hosts in `~/.claude/claudemux/peers` (see `peers.example`) |
 
 **Manual mode.** A registered, fully addressable session that the relay will **never** type into —
@@ -150,6 +162,12 @@ A session registers manual for either reason:
 A session's tmux-ness is fixed when it launches, so this is decided once at registration. If an
 `auto` session later *loses* its pane (e.g. tmux is killed mid-session), the relay can't wake it — it
 leaves the message queued and logs a loud `WARN` rather than dropping it silently.
+
+The guard fails **open**: a glob that matches nothing looks identical to a working one, so it can
+protect nothing without telling you. Match your *actual* directory names, not category words (`*acme*`,
+not `*emr*`), and run **`/cm doctor`** to see which live sessions and workspace dirs the patterns
+cover — `/cm peers` also warns when `manual-patterns` is set but matches no live session. Mode is
+fixed at registration, so restart a session (or run `/cm mode manual`) after editing patterns.
 
 ## Security
 
@@ -198,10 +216,11 @@ Run the test suite — zero framework, just bash + jq:
 ```
 
 It covers registration (sessionId-keyed), live-name resolution (transcript title wins over the
-session-file name, with fallback) including a rename, send/recv, **message-body safety** (shell
-metacharacters stay inert), target validation, reply routing, discovery `--json`, broadcast, and
-cleanup — against an isolated `CLAUDEMUX_ROOT` with fake session files. The relay, tmux wake, and
-cross-machine SSH are integration paths, verified manually.
+session-file name, with fallback) including a rename, duplicate-name disambiguation, send/recv/clear,
+**message-body safety** (shell metacharacters stay inert), target validation, reply routing, the
+manual-mode guard + `/cm doctor` (fail-open detection), the rename-collision notifier, `mode`/`desc`,
+discovery `--json`, broadcast, and cleanup — against an isolated `CLAUDEMUX_ROOT` with fake session
+files. The relay, tmux wake, and cross-machine SSH are integration paths, verified manually.
 
 ## License
 
