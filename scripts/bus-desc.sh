@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Show or set a session's free-text description (shown in the DESC column of /cm peers).
+# Show or set a session's free-text description (shown in the DESC column of /clat peers).
 #   bus-desc.sh                  -> print this session's description
 #   bus-desc.sh <text...>        -> set it (all words joined)
 #   bus-desc.sh --clear          -> remove it
@@ -19,7 +19,7 @@ f="$BUS_REG/$sid.json"
 want="$*"; want="${want//$'\t'/ }"; want="${want//$'\n'/ }"
 if [ -z "$want" ]; then
   cur="$(jq -r '.desc // ""' "$f")"
-  [ -n "$cur" ] && echo "description: $cur" || echo "(no description set — /cm desc <text> to set one)"
+  [ -n "$cur" ] && echo "description: $cur" || echo "(no description set — /clat desc <text> to set one)"
   exit 0
 fi
 [ "$want" = "--clear" ] && want=""

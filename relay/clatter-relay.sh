@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Claudemux relay: watch all mailboxes; on a new message for session X, wake X's tmux
+# Clatter relay: watch all mailboxes; on a new message for session X, wake X's tmux
 # pane so it drains its inbox. Runs as a per-machine systemd --user service (as the invoking
 # user, so it can reach the tmux socket). The ONLY thing ever typed into a pane is a fixed control
 # line — never message content.
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/../scripts/_bus_common.sh"
-LOG="${CLAUDEMUX_RELAY_LOG:-$DIR/relay.log}"
+LOG="${CLATTER_RELAY_LOG:-$DIR/relay.log}"
 
 mkdir -p "$BUS_MBX"
 log() { echo "$(date -Is) $*" >> "$LOG"; }
@@ -14,8 +14,8 @@ log "relay starting; watching $BUS_MBX"
 
 # Periodic name-collision check: notifies a session that /rename'd onto a name already in use. It
 # drops a notice into that session's mailbox, which this relay then delivers via the normal wake.
-# Set CLAUDEMUX_NAMECHECK_INTERVAL=0 to disable. Runs in the background; dies with the relay (cgroup).
-NAMECHECK_INT="${CLAUDEMUX_NAMECHECK_INTERVAL:-10}"
+# Set CLATTER_NAMECHECK_INTERVAL=0 to disable. Runs in the background; dies with the relay (cgroup).
+NAMECHECK_INT="${CLATTER_NAMECHECK_INTERVAL:-10}"
 if [ "$NAMECHECK_INT" -gt 0 ] 2>/dev/null; then
   ( while sleep "$NAMECHECK_INT"; do "$DIR/../scripts/bus-namecheck.sh" >>"$LOG" 2>&1 || true; done ) &
   log "namecheck heartbeat every ${NAMECHECK_INT}s (pid $!)"
@@ -35,11 +35,11 @@ wake() {
   pane=$(bus_tty_to_pane "$tty")
   [ -n "$pane" ] || { log "WARN '$target' is mode=auto but tty $tty maps to no tmux pane — cannot wake; message queued (tmux gone?)"; return; }
   # HARD INVARIANT: the ONLY thing ever typed into a pane is this fixed constant — never a
-  # name, path, or any sender-influenced data. /cm recv self-resolves which session it is,
+  # name, path, or any sender-influenced data. /clat recv self-resolves which session it is,
   # then reads the mailbox itself. This keeps the send-keys injection surface a single literal.
-  tmux send-keys -t "$pane" -l '/cm recv'
+  tmux send-keys -t "$pane" -l '/clat recv'
   tmux send-keys -t "$pane" Enter
-  log "woke '$target' (pid $pid, tty $tty, pane $pane) via /cm recv"
+  log "woke '$target' (pid $pid, tty $tty, pane $pane) via /clat recv"
 }
 
 # Deliver anything already sitting in mailboxes on startup. inotify only reports NEW events, so a
@@ -72,10 +72,10 @@ if command -v inotifywait >/dev/null 2>&1; then
     wake "$target"
   done
 else
-  # Zero-dependency fallback when inotify-tools isn't installed: poll every CLAUDEMUX_POLL seconds.
+  # Zero-dependency fallback when inotify-tools isn't installed: poll every CLATTER_POLL seconds.
   # Message filenames are unique, so a per-file seen-set gives new-file semantics with no re-wakes;
   # the first tick delivers anything already pending.
-  POLL="${CLAUDEMUX_POLL:-1}"; case "$POLL" in ''|*[!0-9.]*) POLL=1 ;; esac
+  POLL="${CLATTER_POLL:-1}"; case "$POLL" in ''|*[!0-9.]*) POLL=1 ;; esac
   log "inotifywait not found — polling every ${POLL}s"
   declare -A seen
   while true; do

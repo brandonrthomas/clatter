@@ -1,12 +1,12 @@
 ---
-description: Claudemux — talk to other Claude Code sessions
+description: Clatter — talk to other Claude Code sessions
 argument-hint: peers | ask <target> <what to say> | send <target> <what to say> | broadcast <what to say> | recv | clear | mode [auto|manual] | desc [text] | status | doctor
 allowed-tools: Bash(bash:*)
 ---
-Handle this Claudemux request by calling the CLI **with the Bash tool** (do NOT use a `!` shell
+Handle this Clatter request by calling the CLI **with the Bash tool** (do NOT use a `!` shell
 expansion of the arguments):
 
-    bash ~/.claude/claudemux/scripts/bus.sh <subcommand> <target?> '<message>'
+    bash ~/.claude/clatter/scripts/bus.sh <subcommand> <target?> '<message>'
 
 The requested arguments are, verbatim:
 
@@ -17,7 +17,7 @@ literal argument (`mode auto|manual`, `desc <text>`) — pass it through verbati
 reword. Just run them and show the output.
 (`clear` archives pending inbox messages without reading them; `doctor` checks the manual-mode
 guard; `mode` sets whether the relay may wake this session; `desc` sets this session's description,
-shown in the DESC column of `/cm peers`.)
+shown in the DESC column of `/clat peers`.)
 For `ask` / `send` (`<target>` then message) and `broadcast` (message only), build `<message>` like so:
 
 - **If the message begins with `*`**: strip that single leading `*` and send the rest **verbatim** —
@@ -35,5 +35,5 @@ Rules that always hold:
 - Then show the CLI's output. For `ask`, remind the user the reply arrives asynchronously.
 
 Example (verbatim): `send api *rm -rf /tmp/cache` →
-`bash ~/.claude/claudemux/scripts/bus.sh send api 'rm -rf /tmp/cache'` — stores that exact string as
+`bash ~/.claude/clatter/scripts/bus.sh send api 'rm -rf /tmp/cache'` — stores that exact string as
 a message for `api`; it is not run.

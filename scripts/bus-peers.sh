@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # List sessions on the bus with their LIVE, disambiguated names (resolved each call).
-#   default : human table — local, then each peer host in $CLAUDEMUX_ROOT/peers (over ssh).
+#   default : human table — local, then each peer host in $CLATTER_ROOT/peers (over ssh).
 #   --json  : local entries only, one JSON object per line (used for remote aggregation).
 # Duplicate names among live local sessions get -2/-3 suffixes (see bus_local_roster).
 set -euo pipefail
@@ -30,7 +30,7 @@ if [ -f "$pf" ]; then
   while IFS= read -r m; do
     m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
     # capture with `|| true` (+ </dev/null so ssh doesn't eat the peers-file loop stdin)
-    jlines="$($BUS_SSH "$m" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-peers.sh" --json' </dev/null 2>/dev/null || true)"
+    jlines="$($BUS_SSH "$m" 'bash "${CLATTER_ROOT:-$HOME/.claude/clatter}/scripts/bus-peers.sh" --json' </dev/null 2>/dev/null || true)"
     [ -z "$jlines" ] && continue
     while IFS= read -r j; do
       [ -z "$j" ] && continue

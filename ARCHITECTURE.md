@@ -1,6 +1,6 @@
 # Architecture
 
-Claudemux is a per-machine message bus for interactive Claude Code sessions. This document covers
+Clatter is a per-machine message bus for interactive Claude Code sessions. This document covers
 how it works, the security model, and the design decisions behind it. For usage, see
 [README.md](README.md).
 
@@ -27,20 +27,20 @@ visited the asking pane. Real-time requires something that can wake an idle sess
 ## Components
 
 ```
-~/.claude/claudemux/
+~/.claude/clatter/
 ├── scripts/
 │   ├── _bus_common.sh        # shared paths + pid→tty→pane + sessionId/live-name resolvers
 │   ├── bus-register.sh       # register/refresh this session (keyed by sessionId)
 │   ├── bus-send.sh           # drop a message (local, or over SSH to a peer machine)
-│   ├── bus-recv.sh           # drain inbox, render as untrusted data  (backs /cm recv)
+│   ├── bus-recv.sh           # drain inbox, render as untrusted data  (backs /clat recv)
 │   ├── bus-resolve.sh        # resolve a live name -> local sessionId (used locally + over SSH)
 │   ├── bus-peers.sh          # list the registry with live names
 │   ├── bus-cleanup.sh        # prune dead-pid entries
 │   ├── bus-deregister.sh     # remove one entry
-│   ├── bus.sh                # /cm dispatcher (peers|ask|send|broadcast|recv|status)
+│   ├── bus.sh                # /clat dispatcher (peers|ask|send|broadcast|recv|status)
 │   ├── bus-hook-register.sh  # SessionStart hook
 │   └── bus-hook-deregister.sh# SessionEnd hook
-├── relay/claudemux-relay.sh  # the daemon (systemd --user)
+├── relay/clatter-relay.sh  # the daemon (systemd --user)
 ├── registry/<sessionId>.json # live sessions (pid-anchored; no name/pane id stored)
 ├── mailbox/<sessionId>/      # <epoch_ms>-<rand>.json messages + archive/
 ├── manual-patterns           # cwd globs that register manual (relay never types into them)
@@ -48,7 +48,7 @@ visited the asking pane. Real-time requires something that can wake an idle sess
 ```
 
 The message-bus terminology (`bus-*.sh`, "on the bus") is the accurate description of the mechanism:
-Claudemux is a message bus; the `bus-*` scripts are its implementation.
+Clatter is a message bus; the `bus-*` scripts are its implementation.
 
 ### Registry — `registry/<sessionId>.json`
 One file per live session, written by the SessionStart hook, keyed by the Claude **sessionId** (a
@@ -66,11 +66,11 @@ Per-session inbox. Messages are JSON files named `<epoch_ms>-<rand>.json` (the m
 Processed files move to `archive/`. Writes are atomic (tmp file + `rename()`), so no partial reads.
 FIFO by filename, which sorts by the millisecond prefix.
 
-### Relay — `relay/claudemux-relay.sh` (systemd `--user` service)
+### Relay — `relay/clatter-relay.sh` (systemd `--user` service)
 Runs as your user so it can reach the tmux socket. On start it **scans existing mailboxes and
 delivers anything already pending** (inotify only reports *new* events, so this closes the
 relay-was-down gap). Then it watches `mailbox/` with `inotifywait` — or, if inotify-tools isn't
-installed, **polls every second** (`CLAUDEMUX_POLL`) with a per-file seen-set for the same new-file
+installed, **polls every second** (`CLATTER_POLL`) with a per-file seen-set for the same new-file
 semantics. For each new `<id>.json` under `mailbox/<target>/` it rejects unsafe target names, reads
 `registry/<target>.json`, and — if the target is `auto` and its pid is alive — resolves
 pid → tty → pane and types the wake. An `auto` target that no longer resolves to a pane (e.g. tmux
@@ -84,8 +84,8 @@ are pruned on contact. Logs to `relay/relay.log`.
   the session its bus name + current live peers. Fires on fresh start **and on `claude -c` resume**.
 - **SessionEnd** → `bus-hook-deregister.sh`: removes the manifest.
 
-### Slash command — `/cm`
-`~/.claude/commands/cm.md` drives `bus.sh` **through the agent** (not a raw `!` shell expansion),
+### Slash command — `/clat`
+`~/.claude/commands/clat.md` drives `bus.sh` **through the agent** (not a raw `!` shell expansion),
 passing any free-text payload as a single quoted argument so the shell never interprets it. Running
 through the agent (rather than raw shell) is also what lets `ask`/`send`/`broadcast` **compose** the
 message from the session's current context by default; a leading `*` sends the rest **verbatim**.
@@ -94,8 +94,8 @@ wake types (it carries no free text).
 
 ## The wake invariant (security core)
 
-**The only thing ever sent via `send-keys` is the fixed constant `/cm recv`.** Message content is
-always read from the mailbox file by that trusted command — never typed into a pane. `/cm recv`
+**The only thing ever sent via `send-keys` is the fixed constant `/clat recv`.** Message content is
+always read from the mailbox file by that trusted command — never typed into a pane. `/clat recv`
 self-resolves *which* session it is (by matching its own claude pid to a registry entry), so even
 the recipient's name never appears in the keystroke. Consequences:
 
@@ -107,7 +107,7 @@ the recipient's name never appears in the keystroke. Consequences:
 - **Message bodies are inert data end-to-end.** `bus-send.sh` stores the body with `jq --arg` and,
   cross-machine, pipes it to the peer over SSH (never interpolated into a command); `bus-recv.sh`
   renders it as line-prefixed quoted text. Nothing in a message is shell-executed by the pipeline,
-  so sending text that *contains* commands is safe. The `/cm` command passes free text to the CLI as
+  so sending text that *contains* commands is safe. The `/clat` command passes free text to the CLI as
   a single quoted argument (via the agent), closing the one spot where raw args used to be
   shell-parsed.
 
@@ -131,7 +131,7 @@ A session is live iff its **pid** is running — that is the sole pruning criter
 (resolving to a tmux pane) is a *separate* property: an alive session with no pane is a valid
 `manual`/poll participant, not a dead one, and is never pruned for lacking a pane. Pruning is
 belt-and-braces: the relay deletes an entry the moment it tries to wake an `auto` target whose pid is
-dead, and a systemd timer (`claudemux-cleanup.timer`, every 5 min) sweeps the rest with
+dead, and a systemd timer (`clatter-cleanup.timer`, every 5 min) sweeps the rest with
 `bus-cleanup.sh` — also pid-only.
 
 ## Naming & addressing
@@ -144,7 +144,7 @@ The addressable **name is resolved live**, never stored, in this order:
 2. Claude's session-file `.name` (`~/.claude/sessions/<pid>.json`) — the derived/auto name;
 3. the cwd basename.
 
-So `/cm peers`, `/cm status`, and `/cm ask <name>` always reflect the *current* name — rename a
+So `/clat peers`, `/clat status`, and `/clat ask <name>` always reflect the *current* name — rename a
 session anywhere and the bus follows, with no re-keying (the key is the sessionId). Names may
 contain spaces and never touch a filesystem path or an SSH command line (those use the UUID), so
 there are no charset restrictions on them. Address a peer by its current name, or by a sessionId
@@ -158,8 +158,8 @@ into that host's mailbox over SSH. The peer's own relay wakes
 the pane, and `bus-recv.sh` renders a `reply to: <from_session>@<machine>` target (a sessionId, so
 replies survive a rename). This reuses your existing SSH keys; verified host↔host in both directions.
 
-Discovery is on-demand over SSH (no daemon, no sync): list peer hosts in `$CLAUDEMUX_ROOT/peers`
-(SSH aliases, one per line). `bus-peers.sh` aggregates each peer's `--json` output into `/cm peers`
+Discovery is on-demand over SSH (no daemon, no sync): list peer hosts in `$CLATTER_ROOT/peers`
+(SSH aliases, one per line). `bus-peers.sh` aggregates each peer's `--json` output into `/clat peers`
 (rows shown as `name@host`, each peer resolving its own live names). Addressing a bare name that
 isn't local runs `bus-resolve.sh` on each peer (the name piped in over stdin — never interpolated
 into the remote command) to map it to that host's sessionId, routing to the first match; use

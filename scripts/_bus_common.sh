@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Shared paths + helpers for Claudemux. Sourced by every bus-*.sh and the relay.
+# Shared paths + helpers for Clatter. Sourced by every bus-*.sh and the relay.
 #
 # Identity model: the STABLE key for a session is its Claude **sessionId** (a UUID) — used for the
 # registry filename and the mailbox directory, so it never changes. The human **name** is resolved
 # LIVE from Claude's own per-session file (~/.claude/sessions/<pid>.json, which Claude updates on
 # /rename), so names can change in real time without re-keying any mailbox.
 
-BUS_ROOT="${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}"
+BUS_ROOT="${CLATTER_ROOT:-$HOME/.claude/clatter}"
 BUS_REG="$BUS_ROOT/registry"          # <sessionId>.json  (stable key)
 BUS_MBX="$BUS_ROOT/mailbox"           # <sessionId>/
-BUS_SELF_MACHINE="${CLAUDEMUX_MACHINE:-$(hostname -s)}"
+BUS_SELF_MACHINE="${CLATTER_MACHINE:-$(hostname -s)}"
 # Claude Code's live per-session files (name/sessionId/status), keyed by pid. Overridable for tests.
-BUS_CC_SESSIONS="${CLAUDEMUX_SESSIONS_DIR:-$HOME/.claude/sessions}"
+BUS_CC_SESSIONS="${CLATTER_SESSIONS_DIR:-$HOME/.claude/sessions}"
 # Claude Code's transcripts (projects/<escaped-cwd>/<sessionId>.jsonl). Renames — local AND from the
 # web UI — are appended here as {"type":"custom-title","customTitle":"…"} records, so the latest
 # such record is the authoritative live name (the session file's .name lags on web renames).
-BUS_CC_PROJECTS="${CLAUDEMUX_PROJECTS_DIR:-$HOME/.claude/projects}"
+BUS_CC_PROJECTS="${CLATTER_PROJECTS_DIR:-$HOME/.claude/projects}"
 # ssh for cross-machine ops; timeout tolerates a cold Tailscale connect. Never prompts.
-BUS_SSH="ssh -o BatchMode=yes -o ConnectTimeout=${CLAUDEMUX_SSH_TIMEOUT:-8}"
+BUS_SSH="ssh -o BatchMode=yes -o ConnectTimeout=${CLATTER_SSH_TIMEOUT:-8}"
 
 # Walk up the process tree from $1 (default $$) to the nearest `claude` process; echo its pid.
 bus_find_claude_pid() {

@@ -1,0 +1,6 @@
+[Unit]
+Description=Clatter registry cleanup (prune dead-pid entries)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claude/clatter/scripts/bus-cleanup.sh
