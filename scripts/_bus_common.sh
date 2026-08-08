@@ -120,7 +120,7 @@ bus_self_name() {
 
 # --- manual-mode guard helpers -------------------------------------------------------------
 # Does cwd $1 match any glob in the manual-patterns file? 0 = yes. Shared by the register hook
-# and `cm doctor` so they can never disagree about what the guard covers.
+# and `clat doctor` so they can never disagree about what the guard covers.
 bus_manual_pattern_match() {
   local cwd="$1" pat_file="$BUS_ROOT/manual-patterns" pat
   [ -f "$pat_file" ] || return 1

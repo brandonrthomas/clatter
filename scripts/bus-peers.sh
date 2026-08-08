@@ -46,5 +46,5 @@ fi
 if bus_manual_patterns_orphaned; then
   echo
   echo "⚠ manual-patterns is set but matches NO live session — those globs protect nothing."
-  echo "  Run 'cm doctor' to see what they match. (manual-mode guards fail OPEN.)"
+  echo "  Run 'clat doctor' to see what they match. (manual-mode guards fail OPEN.)"
 fi

@@ -76,7 +76,7 @@ has "rename: peers shows new title"  "$peers2" alpha2
 eq  "rename: new name resolves -> A" "$("$R/bus-resolve.sh" alpha2)" "$A"
 eq  "rename: old name stops resolving" "$("$R/bus-resolve.sh" alpha)" ""
 
-# --- fail-open manual-patterns guard + cm doctor ---
+# --- fail-open manual-patterns guard + clat doctor ---
 . "$R/_bus_common.sh"
 printf '*emr*\n*legal*\n' > "$CLATTER_ROOT/manual-patterns"
 eq "guard: category globs MISS a real dir (the fail-open bug)" "$(bus_manual_pattern_match /home/x/workspace/acme && echo y || echo n)" n
