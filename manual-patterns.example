@@ -11,7 +11,7 @@
 #   and `*legal*` would match NOTHING and silently protect nothing.
 #
 #   The guard fails OPEN: a glob that matches nothing looks identical to a working one. After editing
-#   this file, run `cm doctor` to see exactly what it matches. A session's mode is fixed when it
+#   this file, run `clat doctor` to see exactly what it matches. A session's mode is fixed when it
 #   registers, so restart (or re-register) a session after editing this file.
 #
 # Examples (replace with YOUR real directory names):

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cm doctor — check the manual-mode guard. Shows which live sessions and which ~/workspace dirs the
+# clat doctor — check the manual-mode guard. Shows which live sessions and which ~/workspace dirs the
 # manual-patterns globs currently match, so a guard that silently matches nothing (fails OPEN) is
 # obvious. Exits 1 if manual-patterns has active globs but matches zero live sessions.
 set -euo pipefail
