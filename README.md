@@ -86,13 +86,22 @@ loginctl enable-linger "$USER"              # so the relay survives logout/reboo
 
 ## Install
 
+Via pip (the package is `clatter-bus`; the command is `clatter`):
+
+```bash
+pip install clatter-bus
+clatter install
+```
+
+…or straight from the repo:
+
 ```bash
 git clone https://github.com/brandonrthomas/clatter.git
 cd clatter
 ./install.sh
 ```
 
-`install.sh` is idempotent. It copies the code to `~/.claude/clatter/`, installs the `/clat` slash
+Both run the same `install.sh` — it's idempotent. It copies the code to `~/.claude/clatter/`, installs the `/clat` slash
 command, wires `SessionStart`/`SessionEnd` hooks into `~/.claude/settings.json` (backing it up
 first, preserving everything else), and enables the relay + cleanup timer. Open new sessions (or
 `claude -c` existing ones) and they'll join.

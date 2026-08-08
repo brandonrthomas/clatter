@@ -9,6 +9,13 @@ mailbox/
 # settings.json backups written by install/uninstall
 *.bak-*
 
+# Python build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+
 # editor / OS cruft
 *.swp
 *~

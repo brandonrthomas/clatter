@@ -1,0 +1,26 @@
+name: Publish to PyPI
+
+# Publishes clatter-bus to PyPI via Trusted Publishing (OIDC) when a version tag is pushed.
+# No API token is stored anywhere — PyPI trusts this workflow in this repo.
+#   PyPI setup (Trusted Publisher): owner=brandonrthomas, repo=clatter,
+#   workflow=publish.yml, environment=release.
+# Release with:  git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: release   # must match the environment on PyPI's trusted-publisher config
+    permissions:
+      id-token: write   # required for Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install --upgrade build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
