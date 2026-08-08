@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 shopt -s nullglob
 pat_file="$BUS_ROOT/manual-patterns"
 
-echo "== claudemux manual-mode guard =="
+echo "== clatter manual-mode guard =="
 echo "patterns file: $pat_file"
 active_globs=0
 if [ -f "$pat_file" ] && grep -qE '^[[:space:]]*[^#[:space:]]' "$pat_file"; then

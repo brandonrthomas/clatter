@@ -1,5 +1,5 @@
 [Unit]
-Description=Periodic Claudemux registry cleanup
+Description=Periodic Clatter registry cleanup
 
 [Timer]
 OnBootSec=2min

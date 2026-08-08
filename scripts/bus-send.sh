@@ -54,7 +54,7 @@ if bus_is_uuid "$target"; then
   to_session="$target"; [ -z "$tmachine" ] && tmachine="$BUS_SELF_MACHINE"
 elif [ -n "$tmachine" ] && [ "$tmachine" != "$BUS_SELF_MACHINE" ]; then
   # name on an explicit remote machine (name piped in — never interpolated into the remote command)
-  to_session="$(printf '%s' "$target" | $BUS_SSH "$tmachine" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
+  to_session="$(printf '%s' "$target" | $BUS_SSH "$tmachine" 'bash "${CLATTER_ROOT:-$HOME/.claude/clatter}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
 else
   to_session="$("$DIR/bus-resolve.sh" "$target" 2>/dev/null || true)"
   if [ -n "$to_session" ]; then
@@ -62,7 +62,7 @@ else
   elif [ -f "$BUS_ROOT/peers" ]; then
     while IFS= read -r m; do
       m="${m%%#*}"; m="$(printf '%s' "$m" | tr -d '[:space:]')"; [ -z "$m" ] && continue
-      r="$(printf '%s' "$target" | $BUS_SSH "$m" 'bash "${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
+      r="$(printf '%s' "$target" | $BUS_SSH "$m" 'bash "${CLATTER_ROOT:-$HOME/.claude/clatter}/scripts/bus-resolve.sh" --stdin' 2>/dev/null || true)"
       [ -n "$r" ] && { to_session="$r"; tmachine="$m"; break; }
     done < "$BUS_ROOT/peers"
   fi
@@ -84,7 +84,7 @@ if [ -z "$tmachine" ] || [ "$tmachine" = "$BUS_SELF_MACHINE" ]; then
   echo "sent $type -> $target (session $to_session, id $id)"
 else
   build_msg | $BUS_SSH "$tmachine" \
-    "R=\"\${CLAUDEMUX_ROOT:-\$HOME/.claude/claudemux}\"; d=\"\$R/mailbox/$to_session\"; \
+    "R=\"\${CLATTER_ROOT:-\$HOME/.claude/clatter}\"; d=\"\$R/mailbox/$to_session\"; \
      mkdir -p \"\$d/archive\" && cat > \"\$d/.$id.tmp\" && mv \"\$d/.$id.tmp\" \"\$d/$id.json\""
   echo "sent $type -> $target@$tmachine (session $to_session, id $id)"
 fi

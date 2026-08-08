@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Dispatcher behind the /cm slash command: peers | ask | send | broadcast | recv | status.
-# `recv` is what the relay's wake types (/cm recv) to make a session drain its inbox.
+# Dispatcher behind the /clat slash command: peers | ask | send | broadcast | recv | status.
+# `recv` is what the relay's wake types (/clat recv) to make a session drain its inbox.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_bus_common.sh"
@@ -14,18 +14,18 @@ case "$cmd" in
     ;;
   ask)
     target="${1:-}"; shift || true; q="$*"
-    { [ -z "$target" ] || [ -z "$q" ]; } && { echo "usage: /cm ask <target> <question>"; exit 1; }
+    { [ -z "$target" ] || [ -z "$q" ]; } && { echo "usage: /clat ask <target> <question>"; exit 1; }
     "$DIR/bus-send.sh" "$target" query "$(subj_of "$q")" "$q"
     echo "(async — keep working; when '$target' answers, the relay wakes this pane with the reply.)"
     ;;
   send|notify)
     target="${1:-}"; shift || true; m="$*"
-    { [ -z "$target" ] || [ -z "$m" ]; } && { echo "usage: /cm send <target> <message>"; exit 1; }
+    { [ -z "$target" ] || [ -z "$m" ]; } && { echo "usage: /clat send <target> <message>"; exit 1; }
     "$DIR/bus-send.sh" "$target" notify "$(subj_of "$m")" "$m"
     ;;
   broadcast)
     m="$*"
-    [ -z "$m" ] && { echo "usage: /cm broadcast <message>"; exit 1; }
+    [ -z "$m" ] && { echo "usage: /clat broadcast <message>"; exit 1; }
     "$DIR/bus-send.sh" _ broadcast "$(subj_of "$m")" "$m"
     ;;
   status)
@@ -36,7 +36,7 @@ case "$cmd" in
       uname="$(bus_unique_name_of_sid "$sid")"; [ -n "$uname" ] || uname="$(bus_self_name)"
       echo "this session: \"$uname\"  (session $sid)"
       pend=$(find "$BUS_MBX/$sid" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
-      echo "pending inbox: $pend message(s)  (run /cm recv to read)"
+      echo "pending inbox: $pend message(s)  (run /clat recv to read)"
     fi
     echo; "$DIR/bus-peers.sh"
     ;;
@@ -56,7 +56,7 @@ case "$cmd" in
     "$DIR/bus-doctor.sh"
     ;;
   *)
-    echo "usage: /cm {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | clear | mode [auto|manual] | desc [text] | status | doctor}"
+    echo "usage: /clat {peers | ask <target> <question> | send <target> <msg> | broadcast <msg> | recv | clear | mode [auto|manual] | desc [text] | status | doctor}"
     exit 1
     ;;
 esac

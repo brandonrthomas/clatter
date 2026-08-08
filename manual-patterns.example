@@ -1,7 +1,7 @@
-# Claudemux manual-mode patterns.
-# Copy this file to  ~/.claude/claudemux/manual-patterns  and add one shell glob per line
+# Clatter manual-mode patterns.
+# Copy this file to  ~/.claude/clatter/manual-patterns  and add one shell glob per line
 # (# starts a comment). Any session whose CWD matches a glob registers in MANUAL mode: peers can
-# see it in `/cm peers`, but the relay will NEVER type /cm recv into it — no other session can
+# see it in `/clat peers`, but the relay will NEVER type /clat recv into it — no other session can
 # drive a turn there. Use it for sensitive workspaces (EMR, legal, secrets).
 #
 # READ THIS:

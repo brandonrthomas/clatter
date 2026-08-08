@@ -21,7 +21,7 @@ notify_collision() {   # $1 = sid, $2 = colliding name
   id="$(date +%s%3N)-nc$RANDOM"; ts="$(date -Is)"
   d="$BUS_MBX/$sid"; mkdir -p "$d/archive"
   jq -nc --arg id "$id" --arg name "$name" --arg sid "$sid" --arg machine "$BUS_SELF_MACHINE" --arg ts "$ts" \
-    '{id:$id, from:"claudemux", from_session:"claudemux", to_session:$sid, machine:$machine,
+    '{id:$id, from:"clatter", from_session:"clatter", to_session:$sid, machine:$machine,
       type:"notify", subject:"name collision",
       body:("Heads up: your bus name \""+$name+"\" is already used by another live session. Two sessions sharing a name are ambiguous for peers to address, so please /rename to something unique. Until then peers see you as \""+$name+"-2\" (or -3, ...).") ,
       reply_to:null, timestamp:$ts}' > "$d/.$id.tmp" && mv "$d/.$id.tmp" "$d/$id.json"

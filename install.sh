@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Claudemux installer — idempotent, safe to re-run.
-# Installs to ~/.claude/claudemux, adds the /cm command + SessionStart/End hooks, and
+# Clatter installer — idempotent, safe to re-run.
+# Installs to ~/.claude/clatter, adds the /clat command + SessionStart/End hooks, and
 # enables the relay + cleanup timer as systemd --user services.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="${CLAUDEMUX_ROOT:-$HOME/.claude/claudemux}"
+DEST="${CLATTER_ROOT:-$HOME/.claude/clatter}"
 CMDS="$HOME/.claude/commands"
 UNITS="$HOME/.config/systemd/user"
 SETTINGS="$HOME/.claude/settings.json"
 
 say() { printf '  %s\n' "$*"; }
-echo "Claudemux installer"
+echo "Clatter installer"
 
 # --- dependencies ---
 missing=""
@@ -29,8 +29,8 @@ mkdir -p "$DEST/scripts" "$DEST/relay" "$DEST/mailbox" "$DEST/registry" "$CMDS" 
 cp "$SRC"/scripts/*.sh "$DEST/scripts/"
 cp "$SRC"/relay/*.sh   "$DEST/relay/"
 chmod +x "$DEST"/scripts/*.sh "$DEST"/relay/*.sh
-cp "$SRC"/commands/cm.md "$CMDS/"
-cp "$SRC"/systemd/claudemux-*.service "$SRC"/systemd/claudemux-*.timer "$UNITS/"
+cp "$SRC"/commands/clat.md "$CMDS/"
+cp "$SRC"/systemd/clatter-*.service "$SRC"/systemd/clatter-*.timer "$UNITS/"
 [ -f "$DEST/manual-patterns" ] || cp "$SRC/manual-patterns.example" "$DEST/manual-patterns"
 [ -f "$DEST/peers" ]           || cp "$SRC/peers.example"           "$DEST/peers"
 say "code -> $DEST"
@@ -52,11 +52,11 @@ say "hooks -> $SETTINGS (backup saved alongside)"
 
 # --- 3) services ---
 systemctl --user daemon-reload
-systemctl --user enable --now claudemux-relay.service
-systemctl --user enable --now claudemux-cleanup.timer
-say "enabled claudemux-relay.service + claudemux-cleanup.timer"
+systemctl --user enable --now clatter-relay.service
+systemctl --user enable --now clatter-cleanup.timer
+say "enabled clatter-relay.service + clatter-cleanup.timer"
 
 echo
 echo "Done. New sessions auto-register; existing ones join when you restart or 'claude -c' them."
-echo "Try it:  open two Claude Code sessions, then in one run  /cm peers  and  /cm ask <other> \"hi\""
+echo "Try it:  open two Claude Code sessions, then in one run  /clat peers  and  /clat ask <other> \"hi\""
 echo "Sensitive workspaces: add globs to  $DEST/manual-patterns  (see manual-patterns.example)."
