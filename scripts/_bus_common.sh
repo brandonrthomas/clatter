@@ -173,3 +173,37 @@ bus_local_roster() {
 bus_unique_name_of_sid() {
   bus_local_roster | awk -F'\t' -v s="$1" '$1==s{print $4; exit}'
 }
+
+# --- registration lifecycle ----------------------------------------------------------------
+# Classify a session's mode: manual if its cwd matches a manual-pattern OR it isn't in a tmux pane
+# (nothing for the relay to wake); auto otherwise. $1 = cwd, $2 = claude pid. Shared by the
+# SessionStart hook and the self-heal path so they always agree.
+bus_classify_mode() {
+  local cwd="$1" pid="$2" tty pane
+  bus_manual_pattern_match "$cwd" && { printf 'manual\n'; return 0; }
+  tty="$(bus_pid_to_tty "$pid" 2>/dev/null || true)"
+  pane=""; [ -n "$tty" ] && pane="$(bus_tty_to_pane "$tty" 2>/dev/null || true)"
+  [ -n "$pane" ] && printf 'auto\n' || printf 'manual\n'
+}
+
+# Remove a session's registry entry on SessionEnd — but ONLY if no other LIVE process still has the
+# same sessionId. Two concurrent `claude -c` of one session share a sessionId (one registry entry);
+# this must not orphan the still-live sibling. If a live sibling exists, keep the entry and repoint
+# it at that live pid. $1 = sessionId, $2 = the exiting pid (may be empty).
+bus_deregister_sid() {
+  local sid="$1" my_pid="${2:-}" reg="$BUS_REG/$1.json" sf p sibling="" tmp
+  [ -f "$reg" ] || return 0
+  shopt -s nullglob
+  for sf in "$BUS_CC_SESSIONS"/*.json; do
+    p="$(basename "$sf" .json)"
+    [ -n "$my_pid" ] && [ "$p" = "$my_pid" ] && continue
+    [ "$(jq -r '.sessionId // empty' "$sf" 2>/dev/null)" = "$sid" ] || continue
+    bus_alive "$p" && { sibling="$p"; break; }
+  done
+  if [ -n "$sibling" ]; then
+    tmp="$reg.tmp.$$"
+    jq --argjson pid "$sibling" '.pid=$pid' "$reg" > "$tmp" 2>/dev/null && mv "$tmp" "$reg" || rm -f "$tmp"
+  else
+    rm -f "$reg"
+  fi
+}

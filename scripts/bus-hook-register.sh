@@ -10,21 +10,9 @@ payload="$(cat 2>/dev/null || true)"                       # SessionStart JSON o
 cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"; [ -n "$cwd" ] || cwd="$(pwd)"
 sid="$(printf '%s' "$payload" | jq -r '.session_id // .sessionId // empty' 2>/dev/null || true)"
 
-mode="auto"
-bus_manual_pattern_match "$cwd" && mode="manual"
-
-# Auto is only meaningful if the relay can actually wake us — i.e. we're in a tmux pane. A session
-# that isn't (a plain terminal) falls back to manual: still addressable and drainable via /clat recv,
-# but the relay won't try (and silently fail) to type into a pane that doesn't exist. A session's
-# tmux-ness is fixed at launch, so decide it once, here.
-if [ "$mode" = "auto" ]; then
-  _pid="$(bus_find_claude_pid "$$" || true)"; _pane=""
-  if [ -n "$_pid" ]; then
-    _tty="$(bus_pid_to_tty "$_pid" || true)"
-    [ -n "$_tty" ] && _pane="$(bus_tty_to_pane "$_tty" || true)"
-  fi
-  [ -n "$_pane" ] || mode="manual"
-fi
+# manual if the cwd matches a manual-pattern OR we're not in a tmux pane (nothing for the relay to
+# wake); auto otherwise. tmux-ness is fixed at launch, so this is decided once, here.
+mode="$(bus_classify_mode "$cwd" "$(bus_find_claude_pid "$$" || true)")"
 
 if [ -n "$sid" ]; then
   "$DIR/bus-register.sh" --sessionid "$sid" --cwd "$cwd" --mode "$mode" >/dev/null 2>&1 || true
