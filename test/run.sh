@@ -141,6 +141,29 @@ has "desc: shown in /clat peers"     "$("$R/bus-peers.sh")" "working on the rela
 "$R/bus-desc.sh" --sid "$C" --clear >/dev/null
 eq  "desc: cleared"                "$(jq -r '.desc' "$CLATTER_ROOT/registry/$C.json")" ""
 
+# --- bus_classify_mode (shared by the SessionStart hook and the self-heal path) ---
+printf '*acme*\n' > "$CLATTER_ROOT/manual-patterns"
+eq "classify: manual-pattern -> manual" "$(bus_classify_mode /home/x/workspace/acme 999999)" manual
+rm -f "$CLATTER_ROOT/manual-patterns"
+eq "classify: no tmux pane -> manual"   "$(bus_classify_mode /home/x/plain 999999)" manual
+
+# --- SessionEnd must NOT orphan a still-live sibling (two processes share one sessionId) ---
+DUPS="deadbeef-1111-1111-1111-111111111111"
+sleep 600 >/dev/null 2>&1 & qa=$!; PIDS+=("$qa")
+sleep 600 >/dev/null 2>&1 & qb=$!; PIDS+=("$qb")
+for p in "$qa" "$qb"; do
+  jq -n --argjson pid "$p" --arg s "$DUPS" --arg c /x/dupe '{pid:$pid,name:"SF-dupe",sessionId:$s,cwd:$c,status:"idle"}' > "$CLATTER_SESSIONS_DIR/$p.json"
+done
+"$R/bus-register.sh" --pid "$qa" --mode auto >/dev/null
+eq "dereg: entry present before"      "$([ -f "$CLATTER_ROOT/registry/$DUPS.json" ] && echo y)" y
+kill "$qa" 2>/dev/null; wait "$qa" 2>/dev/null || true      # instance qa ends; qb still alive
+bus_deregister_sid "$DUPS" "$qa"
+eq "dereg: kept while a sibling is live" "$([ -f "$CLATTER_ROOT/registry/$DUPS.json" ] && echo y)" y
+eq "dereg: repointed to live sibling"    "$(jq -r .pid "$CLATTER_ROOT/registry/$DUPS.json")" "$qb"
+kill "$qb" 2>/dev/null; wait "$qb" 2>/dev/null || true      # last instance ends
+bus_deregister_sid "$DUPS" "$qb"
+eq "dereg: removed when none live"       "$([ -f "$CLATTER_ROOT/registry/$DUPS.json" ] && echo present || echo gone)" gone
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null

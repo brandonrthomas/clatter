@@ -5,6 +5,18 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_bus_common.sh"
 
+# Self-heal: if this live session has fallen off the bus (no registry entry — e.g. a sibling
+# instance's SessionEnd removed it), re-register it so any /clat call brings it back. Registration
+# is otherwise SessionStart-only, which /rename can't trigger.
+_sh_sid="$(bus_self_sid 2>/dev/null || true)"
+if [ -n "$_sh_sid" ] && [ ! -f "$BUS_REG/$_sh_sid.json" ]; then
+  _sh_pid="$(bus_find_claude_pid "$$" 2>/dev/null || true)"
+  if [ -n "$_sh_pid" ] && bus_alive "$_sh_pid"; then
+    "$DIR/bus-register.sh" --sessionid "$_sh_sid" --pid "$_sh_pid" --cwd "$(pwd)" \
+      --mode "$(bus_classify_mode "$(pwd)" "$_sh_pid")" >/dev/null 2>&1 || true
+  fi
+fi
+
 cmd="${1:-status}"; shift || true
 subj_of() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-48; }
 
