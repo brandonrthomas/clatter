@@ -174,6 +174,23 @@ kill "$qb" 2>/dev/null; wait "$qb" 2>/dev/null || true      # last instance ends
 bus_deregister_sid "$DUPS" "$qb"
 eq "dereg: removed when none live"       "$([ -f "$CLATTER_ROOT/registry/$DUPS.json" ] && echo present || echo gone)" gone
 
+# --- pane-state detection: Enter only on a clean input box (screen shapes captured live 2026-09-30) ---
+RL="────────────────────────────────────────"; RLN="───────────────────────────────── clatter ─"
+scr(){ local o; o=$(printf '%s\n' "$@" | bus_screen_input_line); printf 'rc=%s [%s]' "$?" "$o"; }
+eq "screen: idle prompt -> empty input"    "$(scr '✻ Crunched for 26s' "$RL" '❯ ' "$RL" '  user@host:/x' '  ⏵⏵ auto mode on')" "rc=0 []"
+eq "screen: busy, named rule -> empty"     "$(scr '✢ Hashing… (3m 22s)' "$RLN" '❯ ' "$RL" '  user@host:/x')" "rc=0 []"
+eq "screen: half-typed draft -> its text"  "$(scr "$RL" '❯ hello world' "$RL" '  x')" "rc=0 [hello world]"
+eq "screen: our /clat recv reads back"     "$(scr "$RL" '❯ /clat recv' "$RL" '  x')" "rc=0 [/clat recv]"
+eq "screen: permission prompt -> no box"   "$(scr '● Write(/x/probe.txt)' "$RL" ' Create file' ' probe.txt' '╌╌╌╌╌╌' '  1 hi' '╌╌╌╌╌╌' ' Do you want to create probe.txt?' ' ❯ 1. Yes' '   2. Yes, and switch to accept edits' '   3. No' '' ' Esc to cancel · Tab to amend')" "rc=1 []"
+eq "screen: /model picker -> no box"       "$(scr '     1.  Default (recommended)' '   ❯ 2.  Opus 5.5 ✔' '     3.  Fable 5.1' '' '   Enter to set as default · Esc to cancel')" "rc=1 []"
+eq "screen: multi-line draft -> no box"    "$(scr "$RL" '❯ first line' '  second line' "$RL")" "rc=1 []"
+NB=$'\xc2\xa0'   # the real TUI draws the prompt as ❯ + NO-BREAK SPACE
+eq "screen: real NBSP idle -> empty"      "$(scr "$RL" "❯$NB" "$RL")" "rc=0 []"
+eq "screen: real NBSP + our text"         "$(scr "$RL" "❯$NB/clat recv" "$RL")" "rc=0 [/clat recv]"
+eq "screen: C locale, NBSP idle -> empty" "$(LC_ALL=C; export LC_ALL; scr "$RL" "❯$NB" "$RL")" "rc=0 []"
+eq "screen: C locale, idle -> empty"       "$(LC_ALL=C; export LC_ALL; scr "$RL" '❯ ' "$RL")" "rc=0 []"
+eq "screen: C locale, prompt -> no box"    "$(LC_ALL=C; export LC_ALL; scr "$RL" ' Do you want to proceed?' ' ❯ 1. Yes' '   3. No')" "rc=1 []"
+
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
 "$R/bus-send.sh" _ broadcast "b" "hi all" >/dev/null

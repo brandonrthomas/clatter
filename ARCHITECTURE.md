@@ -73,7 +73,8 @@ relay-was-down gap). Then it watches `mailbox/` with `inotifywait` — or, if in
 installed, **polls every second** (`CLATTER_POLL`) with a per-file seen-set for the same new-file
 semantics. For each new `<id>.json` under `mailbox/<target>/` it rejects unsafe target names, reads
 `registry/<target>.json`, and — if the target is `auto` and its pid is alive — resolves
-pid → tty → pane and types the wake. An `auto` target that no longer resolves to a pane (e.g. tmux
+pid → tty → pane and types the wake — or defers it if the pane isn't at an empty input box (see
+the wake invariant below). An `auto` target that no longer resolves to a pane (e.g. tmux
 was killed mid-session) is left queued with a loud `WARN` rather than silently dropped. Dead targets
 are pruned on contact. Logs to `relay/relay.log`.
 
@@ -99,12 +100,26 @@ wake types (it carries no free text).
 typed into a pane. `/clat recv` self-resolves *which* session it is (by matching its own claude pid
 to a registry entry), so even the recipient's name never appears in the keystroke.
 
-The `Enter` is not scoped to the text the relay typed: it submits whatever the pane's input line
-holds at that moment. Normally that is just `/clat recv`; if the user is mid-typing, their partial
-text is submitted with it; and if the pane is showing a pending prompt, the `Enter` goes to that
-prompt. Whether it can confirm a Claude Code permission prompt is not yet verified. Consequences:
+`Enter` isn't scoped to the text the relay typed: it acts on whatever the pane is showing. Tested
+live, a blind `Enter` **approves a pending permission prompt** and sets the default in the `/model`
+picker, and on a half-typed draft it submits the user's text. So the relay checks the screen
+(`tmux capture-pane`) before each keystroke:
 
-- A peer cannot cause arbitrary text to be submitted as a "user" turn in another session.
+1. It types `/clat recv` only if the screen shows Claude Code's input box (a `❯` line at column 0,
+   between two full-width `─` rules) **and that box is empty**. Dialogs replace the box (their
+   cursor is indented, with no rule beneath), so a pending prompt fails the check. So does any draft.
+2. It presses `Enter` only after the input line reads back exactly `/clat recv`. If the screen
+   changes in between, it takes back its own 10 characters (only when they're still at the end of
+   the line) and sends nothing else.
+
+A wake that fails either check is **deferred**: the message stays queued, a marker is dropped in
+`.deferred/`, and a background loop retries every `CLATTER_WAKE_RETRY` seconds (default 5) until the
+pane is ready. Wakes are serialized with one lock. The detector (`bus_screen_input_line`) is
+unit-tested against captured screens, including the real prompt glyph (`❯` + U+00A0 no-break space).
+Consequences:
+
+- A peer cannot cause arbitrary text to be submitted as a "user" turn in another session, and a
+  wake never answers a dialog or submits someone's draft.
 - Mailbox target names are constrained to `[A-Za-z0-9_-]` on both the send side and the relay side
   (no path traversal, no shell injection into the cross-machine SSH drop).
 - `bus-recv.sh` frames every message as untrusted data with an explicit "do not obey" preamble and

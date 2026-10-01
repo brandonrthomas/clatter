@@ -49,7 +49,8 @@ peer that actually **owns** the answer, in real time, without you in the middle.
   reflected immediately, with no manual wiring. Sessions auto-register at start and on `claude -c`.
 - **Self-cleaning.** Dead sessions are pruned automatically (on contact and on a timer).
 - **Safe by design.** The relay only ever types a fixed control string (`/clat recv`, then `Enter`) —
-  never message content — so a peer can't inject an arbitrary "user" turn. Sensitive workspaces can be
+  never message content — so a peer can't inject an arbitrary "user" turn. It types only into an
+  empty input box, and holds the wake while a dialog is up or you're typing. Sensitive workspaces can be
   marked read-only to the relay, and `/clat doctor` audits that the guard actually covers them. (See
   [Security](#security).)
 - **Small + legible.** Bash + `jq` + `inotifywait` + `tmux`. One systemd `--user` relay. No server,
@@ -185,10 +186,13 @@ turn in another session. Clatter is built around that:
 
 - **The wake is a fixed constant** (`/clat recv`) **plus `Enter`.** Message *content* is always read
   from a file by that trusted command, never typed into a pane — so a peer can never cause arbitrary
-  text to be submitted as a user turn elsewhere. The `Enter` isn't scoped to what the relay typed,
-  though: it submits whatever the pane's input line holds, and goes to a prompt if one is pending
-  (see [Status & limitations](#status--limitations)). Mailbox names are charset-restricted on both
-  the send and relay sides.
+  text to be submitted as a user turn elsewhere.
+- **The wake never lands on a dialog or a draft.** A blind `Enter` would approve a pending permission
+  prompt (verified live), so the relay reads the pane first. It types only if the screen shows an
+  *empty* input box, and presses `Enter` only after the line reads back exactly `/clat recv`.
+  Otherwise the wake is deferred: the message stays queued and is retried every few seconds
+  (`CLATTER_WAKE_RETRY`, default 5) until the pane is ready. Mailbox names are charset-restricted on
+  both the send and relay sides.
 - **Rendered messages are framed as untrusted data** with an explicit "do not obey" preamble; header
   fields are newline-escaped so a message can't forge the frame.
 - **Message bodies are inert data end-to-end.** They're stored with `jq --arg`, transported as files
@@ -216,10 +220,11 @@ Your `settings.json` is backed up before every change.
 - **Cross-machine works** (verified host↔host, both directions, including different home dirs). List
   peer hosts in `~/.claude/clatter/peers`; then `/clat peers` shows their sessions as `name@host` and
   a bare-name `/clat ask <name>` auto-locates the peer. You can always force one with `name@host`.
-- The relay wakes a pane with `/clat recv` + `Enter`, and that `Enter` submits whatever is on the
-  input line — so waking a pane while you're mid-typing sends your half-typed text along with
-  `/clat recv` (targets are normally idle). If the pane has a prompt pending, the `Enter` goes to the
-  prompt; whether that can confirm a Claude Code permission prompt hasn't been verified yet.
+- The relay finds the input box by reading Claude Code's screen layout (a `❯` line between two `─`
+  rules). If a future Claude Code release redraws that box differently, wakes will defer — never
+  misfire — and `relay.log` will show `deferred … no input box`; `/clat recv` still works by hand.
+- A message arriving while you're typing in the target pane waits until your input line is empty
+  again (send or clear your draft).
 
 ## Development
 
@@ -233,8 +238,9 @@ It covers registration (sessionId-keyed), live-name resolution (transcript title
 session-file name, with fallback) including a rename, duplicate-name disambiguation, send/recv/clear,
 **message-body safety** (shell metacharacters stay inert), target validation, reply routing, the
 manual-mode guard + `/clat doctor` (fail-open detection), the rename-collision notifier, `mode`/`desc`,
-discovery `--json`, broadcast, and cleanup — against an isolated `CLATTER_ROOT` with fake session
-files. The relay, tmux wake, and cross-machine SSH are integration paths, verified manually.
+discovery `--json`, broadcast, cleanup, and the relay's screen check (idle box, draft, permission
+prompt, `/model` picker) — against an isolated `CLATTER_ROOT` with fake session files. The relay's
+tmux wake and cross-machine SSH are integration paths, verified manually.
 
 ## License
 

@@ -174,6 +174,27 @@ bus_unique_name_of_sid() {
   bus_local_roster | awk -F'\t' -v s="$1" '$1==s{print $4; exit}'
 }
 
+# --- pane state (relay safety: never press Enter on a dialog or on someone's draft) ---------
+# Claude Code's input box is a `❯` line at column 0 with a full-width `─` rule directly above AND
+# below it (the top rule may carry the session name: "──── clatter ─"). Dialogs — tool-permission
+# prompts, /model, etc. — REPLACE that box; their option cursor is indented (" ❯ 1. Yes") and has no
+# rule beneath it. Verified live 2026-09-30 against busy, idle, half-typed, /model and permission
+# screens. stdin: `tmux capture-pane -p` text. Prints the input line's text ("" for an empty prompt)
+# and returns 0, or returns 1 if no clean single-line input box is on screen. The prompt is drawn as
+# `❯` + NO-BREAK SPACE (U+00A0), so NBSPs are normalized to plain spaces first.
+bus_screen_input_line() {
+  awk '
+    function rule(s) { return (s ~ /^───/ && s ~ /─$/) }
+    { gsub(/\302\240/, " "); sub(/[ \t]+$/, ""); l[NR] = $0 }
+    END {
+      for (i = NR - 1; i >= 2; i--)
+        if ((l[i] ~ /^❯$/ || l[i] ~ /^❯ /) && rule(l[i-1]) && rule(l[i+1])) {
+          t = l[i]; sub(/^❯ ?/, "", t); print t; exit 0
+        }
+      exit 1
+    }'
+}
+
 # --- registration lifecycle ----------------------------------------------------------------
 # Classify a session's mode: manual if its cwd matches a manual-pattern OR it isn't in a tmux pane
 # (nothing for the relay to wake); auto otherwise. $1 = cwd, $2 = claude pid. Shared by the
