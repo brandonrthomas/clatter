@@ -94,10 +94,15 @@ wake types (it carries no free text).
 
 ## The wake invariant (security core)
 
-**The only thing ever sent via `send-keys` is the fixed constant `/clat recv`.** Message content is
-always read from the mailbox file by that trusted command — never typed into a pane. `/clat recv`
-self-resolves *which* session it is (by matching its own claude pid to a registry entry), so even
-the recipient's name never appears in the keystroke. Consequences:
+**The relay sends exactly two keystrokes via `send-keys`: the fixed literal `/clat recv`, then
+`Enter`.** Message content is always read from the mailbox file by that trusted command — never
+typed into a pane. `/clat recv` self-resolves *which* session it is (by matching its own claude pid
+to a registry entry), so even the recipient's name never appears in the keystroke.
+
+The `Enter` is not scoped to the text the relay typed: it submits whatever the pane's input line
+holds at that moment. Normally that is just `/clat recv`; if the user is mid-typing, their partial
+text is submitted with it; and if the pane is showing a pending prompt, the `Enter` goes to that
+prompt. Whether it can confirm a Claude Code permission prompt is not yet verified. Consequences:
 
 - A peer cannot cause arbitrary text to be submitted as a "user" turn in another session.
 - Mailbox target names are constrained to `[A-Za-z0-9_-]` on both the send side and the relay side

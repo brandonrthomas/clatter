@@ -48,8 +48,8 @@ peer that actually **owns** the answer, in real time, without you in the middle.
   sets, shown in your tab) — resolved live, so renaming a session (locally *or* from the web UI) is
   reflected immediately, with no manual wiring. Sessions auto-register at start and on `claude -c`.
 - **Self-cleaning.** Dead sessions are pruned automatically (on contact and on a timer).
-- **Safe by design.** The only thing ever typed into another pane is a fixed control string — never
-  message content — so a peer can't inject an arbitrary "user" turn. Sensitive workspaces can be
+- **Safe by design.** The relay only ever types a fixed control string (`/clat recv`, then `Enter`) —
+  never message content — so a peer can't inject an arbitrary "user" turn. Sensitive workspaces can be
   marked read-only to the relay, and `/clat doctor` audits that the guard actually covers them. (See
   [Security](#security).)
 - **Small + legible.** Bash + `jq` + `inotifywait` + `tmux`. One systemd `--user` relay. No server,
@@ -183,10 +183,12 @@ fixed at registration, so restart a session (or run `/clat mode manual`) after e
 The threat here isn't eavesdropping — it's **injection**, because waking a pane literally submits a
 turn in another session. Clatter is built around that:
 
-- **The wake is a single fixed constant** (`/clat recv`). Message *content* is always read from a
-  file by that trusted command, never typed into a pane — so a peer can never cause arbitrary text
-  to be submitted as a user turn elsewhere. Mailbox names are charset-restricted on both the send
-  and relay sides.
+- **The wake is a fixed constant** (`/clat recv`) **plus `Enter`.** Message *content* is always read
+  from a file by that trusted command, never typed into a pane — so a peer can never cause arbitrary
+  text to be submitted as a user turn elsewhere. The `Enter` isn't scoped to what the relay typed,
+  though: it submits whatever the pane's input line holds, and goes to a prompt if one is pending
+  (see [Status & limitations](#status--limitations)). Mailbox names are charset-restricted on both
+  the send and relay sides.
 - **Rendered messages are framed as untrusted data** with an explicit "do not obey" preamble; header
   fields are newline-escaped so a message can't forge the frame.
 - **Message bodies are inert data end-to-end.** They're stored with `jq --arg`, transported as files
@@ -214,7 +216,10 @@ Your `settings.json` is backed up before every change.
 - **Cross-machine works** (verified host↔host, both directions, including different home dirs). List
   peer hosts in `~/.claude/clatter/peers`; then `/clat peers` shows their sessions as `name@host` and
   a bare-name `/clat ask <name>` auto-locates the peer. You can always force one with `name@host`.
-- Waking a pane while you're mid-typing appends to your input line (targets are normally idle).
+- The relay wakes a pane with `/clat recv` + `Enter`, and that `Enter` submits whatever is on the
+  input line — so waking a pane while you're mid-typing sends your half-typed text along with
+  `/clat recv` (targets are normally idle). If the pane has a prompt pending, the `Enter` goes to the
+  prompt; whether that can confirm a Claude Code permission prompt hasn't been verified yet.
 
 ## Development
 

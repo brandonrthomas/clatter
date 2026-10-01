@@ -27,12 +27,14 @@ case "$cmd" in
   ask)
     target="${1:-}"; shift || true; q="$*"
     { [ -z "$target" ] || [ -z "$q" ]; } && { echo "usage: /clat ask <target> <question>"; exit 1; }
+    case "$target" in -*) echo "/clat ask: target can't start with '-'" >&2; exit 1 ;; esac
     "$DIR/bus-send.sh" "$target" query "$(subj_of "$q")" "$q"
     echo "(async — keep working; when '$target' answers, the relay wakes this pane with the reply.)"
     ;;
   send|notify)
     target="${1:-}"; shift || true; m="$*"
     { [ -z "$target" ] || [ -z "$m" ]; } && { echo "usage: /clat send <target> <message>"; exit 1; }
+    case "$target" in -*) echo "/clat send: target can't start with '-'" >&2; exit 1 ;; esac
     "$DIR/bus-send.sh" "$target" notify "$(subj_of "$m")" "$m"
     ;;
   broadcast)

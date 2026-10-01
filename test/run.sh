@@ -52,21 +52,31 @@ eq  "peers --json alive"            "$("$R/bus-peers.sh" --json | jq -rs 'map(se
 eq  "resolve alpha -> A"            "$("$R/bus-resolve.sh" alpha)" "$A"
 eq  "resolve unknown -> empty"      "$("$R/bus-resolve.sh" nobody)" ""
 
-# send by name + recv + body safety
+# send (notify) by name + recv + send-side body safety (bus-send stores the body inertly)
 mk="$CLATTER_ROOT/PWN"
-# --from-session gives a repliable sender (this test shell isn't a registered session)
-"$R/bus-send.sh" alpha query "hi" 'x; touch '"$mk"' $(touch '"$mk"'2) `touch '"$mk"'3`' --from tester --from-session "$B" >/dev/null
+"$R/bus-send.sh" alpha notify "hi" 'x; touch '"$mk"' $(touch '"$mk"'2) `touch '"$mk"'3`' >/dev/null
 eq  "send: delivered to A's mailbox" "$(n_json "$CLATTER_ROOT/mailbox/$A")" 1
 eq  "send: to_session=A"             "$(jq -r .to_session "$CLATTER_ROOT"/mailbox/$A/*.json)" "$A"
 eq  "safety: body executed nothing"  "$(set -- "$mk"*; printf '%s\n' "$#")" 0
 rout="$("$R/bus-recv.sh" "$A")"
 has "recv: renders body"             "$rout" "x; touch"
-has "recv: reply-to is sessionId@machine" "$rout" "reply to: $B@$MACH"
-# P5: a query with no repliable sender is refused
-"$R/bus-send.sh" "$A" query s b --from x >/dev/null 2>&1; eq "query w/o repliable sender refused" "$?" 1
 
-# reply path: address by sessionId directly
-"$R/bus-send.sh" "$B" response "re" "answer" --reply-to "1-a" --from x >/dev/null
+# recv renders reply-to as <from_session>@<machine> — craft a message with a known sender sid
+RF="ref00000-1111-2222-3333-444444444444"; mkdir -p "$CLATTER_ROOT/mailbox/$RF/archive"
+jq -nc --arg to "$RF" --arg fs "$B" --arg m "$MACH" \
+  '{id:"t1",from:"x",from_session:$fs,to_session:$to,machine:$m,type:"query",subject:"q",body:"b",reply_to:null,timestamp:"t"}' \
+  > "$CLATTER_ROOT/mailbox/$RF/t1.json"
+has "recv: reply-to is sessionId@machine" "$("$R/bus-recv.sh" "$RF")" "reply to: $B@$MACH"
+
+# the sender is always the live session (no --from/--from-session to spoof it): a query from an
+# unregistered context is refused, an invalid type is rejected, and bus.sh refuses a '-'-leading
+# target (which bus-send would otherwise parse as a flag)
+"$R/bus-send.sh" "$A" query s b   >/dev/null 2>&1; eq "query w/o repliable sender refused" "$?" 1
+"$R/bus-send.sh" "$A" bogus s b   >/dev/null 2>&1; eq "send: rejects invalid message type"  "$?" 1
+"$R/bus.sh"      send --reply-to x msg >/dev/null 2>&1; eq "dispatch: refuses '-'-leading target" "$?" 1
+
+# reply path: address by sessionId directly (response needs no sender)
+"$R/bus-send.sh" "$B" response "re" "answer" --reply-to "1-a" >/dev/null
 eq  "send: sessionId target delivers" "$(n_json "$CLATTER_ROOT/mailbox/$B")" 1
 
 # LIVE RENAME via a new custom-title (exactly what a local /rename or web rename appends)
@@ -120,8 +130,8 @@ eq "namecheck: not re-notified on the next run"  "$(n_json "$CLATTER_ROOT/mailbo
 
 # --- clear inbox: archive pending without reading ---
 CS="abcdef00-1111-2222-3333-444444444444"
-"$R/bus-send.sh" "$CS" notify n1 b1 --from x >/dev/null
-"$R/bus-send.sh" "$CS" notify n2 b2 --from x >/dev/null
+"$R/bus-send.sh" "$CS" notify n1 b1 >/dev/null
+"$R/bus-send.sh" "$CS" notify n2 b2 >/dev/null
 eq "clear: two messages pending"    "$(n_json "$CLATTER_ROOT/mailbox/$CS")" 2
 "$R/bus-clear.sh" "$CS" >/dev/null
 eq "clear: inbox emptied"           "$(n_json "$CLATTER_ROOT/mailbox/$CS")" 0
@@ -166,7 +176,7 @@ eq "dereg: removed when none live"       "$([ -f "$CLATTER_ROOT/registry/$DUPS.j
 
 # broadcast
 "$R/bus-recv.sh" "$B" >/dev/null
-"$R/bus-send.sh" _ broadcast "b" "hi all" --from tester >/dev/null
+"$R/bus-send.sh" _ broadcast "b" "hi all" >/dev/null
 eq  "broadcast: reached A"          "$(n_json "$CLATTER_ROOT/mailbox/$A")" 1
 eq  "broadcast: reached B"          "$(n_json "$CLATTER_ROOT/mailbox/$B")" 1
 

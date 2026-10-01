@@ -5,28 +5,27 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_bus_common.sh"
 
-reply_to="" from="" from_session_arg="" pos=()
+reply_to="" pos=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --reply-to)     reply_to="$2"; shift 2 ;;
-    --from)         from="$2"; shift 2 ;;
-    --from-session) from_session_arg="$2"; shift 2 ;;
+    --reply-to) reply_to="$2"; shift 2 ;;
     *) pos+=("$1"); shift ;;
   esac
 done
 target="${pos[0]:-}"; type="${pos[1]:-}"; subject="${pos[2]:-}"; body="${pos[3]:-}"
 if [ -z "$target" ] || [ -z "$type" ]; then
-  echo "usage: bus-send.sh <name|sessionId[@machine]> <query|response|notify|broadcast> <subject> <body> [--reply-to id] [--from name]" >&2
+  echo "usage: bus-send.sh <name|sessionId[@machine]> <query|response|notify|broadcast> <subject> <body> [--reply-to id]" >&2
   exit 1
 fi
+case "$type" in query|response|notify|broadcast) ;; *) echo "bus-send: invalid type '$type' (want query|response|notify|broadcast)" >&2; exit 1 ;; esac
 
 tmachine=""
 case "$target" in *@*) tmachine="${target##*@}"; target="${target%@*}" ;; esac
 case "$tmachine" in *[!A-Za-z0-9_.-]*) echo "bus-send: invalid machine '$tmachine'" >&2; exit 1 ;; esac
 
-# --- sender identity (live) ---
-from_session="${from_session_arg:-$(bus_self_sid || true)}"; [ -z "$from_session" ] && from_session="unknown"
-[ -z "$from" ] && from="$(bus_self_name)"
+# --- sender identity: always the live session; callers cannot set or spoof it ---
+from_session="$(bus_self_sid || true)"; [ -z "$from_session" ] && from_session="unknown"
+from="$(bus_self_name)"
 # A query expects a reply, so it needs a repliable sender. Refuse to send one from a context we
 # can't identify (e.g. outside a registered session) rather than emit an unrepliable message.
 if [ "$type" = "query" ] && [ "$from_session" = "unknown" ]; then
@@ -43,7 +42,7 @@ if [ "$type" = "broadcast" ]; then
   for f in "$BUS_REG"/*.json; do
     s="$(jq -r '.sessionId' "$f" 2>/dev/null)"; [ "$s" = "$from_session" ] && continue
     bus_alive "$(jq -r '.pid' "$f" 2>/dev/null)" || continue
-    "$0" "$s" notify "$subject" "$body" --from "$from"
+    "$0" "$s" notify "$subject" "$body"
   done
   exit 0
 fi
