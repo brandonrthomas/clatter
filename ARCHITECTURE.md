@@ -112,7 +112,11 @@ picker, and on a half-typed draft it submits the user's text. So the relay check
    changes in between, it takes back its own 10 characters (only when they're still at the end of
    the line) and sends nothing else.
 
-A wake that fails either check is **deferred**: the message stays queued, a marker is dropped in
+Both steps also require that the pane isn't in tmux copy/view mode (scrolled back). In that mode, keys
+become tmux commands, and `capture-pane` still shows the live screen, so the input-box check can't
+detect it on its own.
+
+A wake that fails any of these checks is **deferred**: the message stays queued, a marker is dropped in
 `.deferred/`, and a background loop retries every `CLATTER_WAKE_RETRY` seconds (default 5) until the
 pane is ready. Wakes are serialized with one lock. The detector (`bus_screen_input_line`) is
 unit-tested against captured screens, including the real prompt glyph (`❯` + U+00A0 no-break space).

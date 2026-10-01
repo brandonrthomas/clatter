@@ -29,6 +29,9 @@ DEFER_DIR="$BUS_ROOT/.deferred"; mkdir -p "$DEFER_DIR"
 defer()      { [ -e "$DEFER_DIR/$1" ] || log "deferred '$1': $2 — message stays queued; retrying"; : > "$DEFER_DIR/$1"; }
 undefer()    { rm -f "$DEFER_DIR/$1"; }
 pane_input() { tmux capture-pane -p -t "$1" 2>/dev/null | bus_screen_input_line; }
+# In copy/view mode (scrolled back) keys are tmux commands, not text — and capture-pane still shows
+# the live screen, so the input-box check alone can't see it. Unknown state counts as in-mode.
+pane_in_mode() { [ "$(tmux display -p -t "$1" '#{pane_in_mode}' 2>/dev/null)" != 0 ]; }
 
 # One wake at a time (the event loop and the retry loop can race). Blocking, so a wake is never
 # skipped — a skipped one could miss a message that landed just after the other attempt looked.
@@ -56,6 +59,7 @@ wake_locked() {
   # Enter on a permission prompt approves it and on /model sets the default model (both verified live).
   # 1) Type only into an EMPTY input box: no dialog up and no half-typed draft. (Exactly `/clat recv`
   #    already there is our own text from an attempt whose repaint was slow — just submit it.)
+  pane_in_mode "$pane" && { defer "$target" "pane is in tmux copy/view mode (scrolled back)"; return; }
   line=$(pane_input "$pane") || { defer "$target" "no input box on screen (a dialog or prompt is up)"; return; }
   if [ "$line" != "/clat recv" ]; then
     [ -z "$line" ] || { defer "$target" "input line is not empty (someone is typing)"; return; }
@@ -66,7 +70,10 @@ wake_locked() {
     line=$(pane_input "$pane") && [ "$line" = "/clat recv" ] && break
     sleep 0.1
   done
-  if [ "$line" = "/clat recv" ]; then
+  if pane_in_mode "$pane"; then
+    # Entered copy mode mid-wake: send nothing more. Our text, if typed, is submitted on a retry.
+    defer "$target" "pane entered tmux copy/view mode before Enter"
+  elif [ "$line" = "/clat recv" ]; then
     tmux send-keys -t "$pane" Enter
     undefer "$target"
     log "woke '$target' (pid $pid, tty $tty, pane $pane) via /clat recv"

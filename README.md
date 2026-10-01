@@ -224,7 +224,8 @@ Your `settings.json` is backed up before every change.
   rules). If a future Claude Code release redraws that box differently, wakes will defer — never
   misfire — and `relay.log` will show `deferred … no input box`; `/clat recv` still works by hand.
 - A message arriving while you're typing in the target pane waits until your input line is empty
-  again (send or clear your draft).
+  again (send or clear your draft). Likewise, it waits while that pane is scrolled back in tmux
+  copy mode.
 
 ## Development
 
